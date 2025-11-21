@@ -5,6 +5,43 @@ import io
 import sys
 
 # ============================================================
+#                 INPUT SANITIZATION (NEW)
+# ============================================================
+
+def sanitize_input(expr_str):
+    """
+    Replaces common Unicode math symbols and full-width characters
+    with their ASCII equivalents before processing.
+    """
+    if not isinstance(expr_str, str):
+        return expr_str  # Safety check
+
+    replacements = {
+        # Math Operators
+        "\u2212": "-",  # Minus Sign (−)
+        "\u22C5": "*",  # Dot Operator (⋅)
+        "\u00D7": "*",  # Multiplication Sign (×)
+        "\u00F7": "/",  # Division Sign (÷)
+
+        # Full-width Brackets
+        "\uFF08": "(",  # Full-width (
+        "\uFF09": ")",  # Full-width )
+        "\uFF3B": "[",  # Full-width [
+        "\uFF3D": "]",  # Full-width ]
+        "\uFF5B": "{",  # Full-width {
+        "\uFF5D": "}",  # Full-width }
+        
+        # Common Spaces
+        "\u3000": " ",  # Ideographic Space
+        "\u00A0": " "   # Non-breaking Space
+    }
+
+    for uni, asc in replacements.items():
+        expr_str = expr_str.replace(uni, asc)
+    
+    return expr_str
+
+# ============================================================
 #                 FRACTION OUTPUT SWITCH
 # ============================================================
 
@@ -254,6 +291,11 @@ def solve_expression(expr_str, print_steps=True, _is_recursive_call=False):
     global GLOBAL_STEP
     global _CURRENT_VARIABLE_ASSIGNMENTS
 
+    # --- THIS IS THE FIX ---
+    # Sanitize all incoming strings to use ASCII equivalents first
+    expr_str = sanitize_input(expr_str)
+    # --- END OF FIX ---
+
     expr = convert_mixed_numbers(expr_str).replace(" ", "")
 
     # Apply variable assignments only for the initial, top-level call to solve_expression
@@ -408,6 +450,12 @@ def solve_expression(expr_str, print_steps=True, _is_recursive_call=False):
     # No 'x', so it's a purely numeric expression
     numeric = calculate_standard_expression(expr)
     if numeric is None:
+        # Failsafe: if the expression was just a sanitized bracket, e.g. "{"
+        # which becomes "(", the numeric calc will fail.
+        # Give a clearer error message than just "(", which might have been "{"
+        if expr_str.strip() != expr.strip() and not re.search(r'\d', expr):
+             return f"ERROR: Invalid expression after sanitizing '{expr_str}'"
+        
         return f"ERROR: Invalid numeric expression '{expr}'"
 
     return numeric
@@ -453,6 +501,12 @@ def run_calculator(mode, expression_lines):
             expression_to_solve = ""
 
             try:
+                # --- Sanitize the *raw* input line *before* splitting by semicolon ---
+                # This ensures "a=5；b=3" (with a full-width semicolon) also works.
+                # We add '；' (U+FF1B) to the sanitizer for this.
+                
+                raw = sanitize_input(raw).replace("\uFF1B", ";") # Full-width semicolon
+                
                 # Split by semicolon, clean whitespace
                 parts = [p.strip() for p in raw.split(";") if p.strip()]
                 is_equation_for_x = False
@@ -484,6 +538,7 @@ def run_calculator(mode, expression_lines):
 
                         # Solve the expression for the assignment
                         # Pass _is_recursive_call=True to prevent double-substitution
+                        # solve_expression will sanitize the temp_value_expr_str automatically
                         solved_value = solve_expression(temp_value_expr_str, print_steps=False, _is_recursive_call=True)
 
                         if isinstance(solved_value, str) and solved_value.startswith("ERROR"):
@@ -537,6 +592,7 @@ def run_calculator(mode, expression_lines):
                     # We have an expression_to_solve
                     print(f"\nProcessing: {expression_to_solve}")
                     # This is a top-level call, so print_steps=True (it will auto-disable if simple)
+                    # solve_expression will sanitize the expression_to_solve string
                     result = solve_expression(expression_to_solve, print_steps=True)
                     print("\n" + "=" * 40)
                     print("RESULT:", result)
@@ -599,6 +655,7 @@ if __name__ == "__main__":
         # will redirect it, capture the output, and then return it as a string.
         # We just need to print that string.
         
+        # The `raw` string will be sanitized *inside* run_calculator/solve_expression
         output_string = run_calculator(mode, [raw])
         
         # Print the captured output from run_calculator
