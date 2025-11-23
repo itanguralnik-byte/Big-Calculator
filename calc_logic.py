@@ -5,16 +5,38 @@ import io
 import sys
 
 # ============================================================
-#                 INPUT SANITIZATION (NEW)
+#                 INPUT SANITIZATION (FIXED)
 # ============================================================
+
+# --- START OF MODIFICATION ---
+# Compile the regex for allowed characters for efficiency.
+# We allow:
+# a-z (lowercase letters)
+# 0-9 (numbers)
+# + - * / % (operators)
+# ( ) [ ] { } (brackets)
+# = (assignment)
+# ; (separator)
+# . (decimal point)
+# _ (variable underscore)
+# \s (whitespace)
+# This regex matches any character NOT in this set.
+DISALLOWED_CHARS_REGEX = re.compile(r"[^a-z0-9+\-*/%()[\]{}=;._\s]")
+# --- END OF MODIFICATION ---
+
 
 def sanitize_input(expr_str):
     """
-    Replaces common Unicode math symbols and full-width characters
-    with their ASCII equivalents before processing.
+    Replaces common Unicode math symbols, full-width characters,
+    converts to lowercase, and strips any disallowed characters.
     """
     if not isinstance(expr_str, str):
         return expr_str  # Safety check
+
+    # --- START OF MODIFICATION (Force Lowercase) ---
+    # Convert entire expression to lowercase first.
+    expr_str = expr_str.lower()
+    # --- END OF MODIFICATION ---
 
     replacements = {
         # Math Operators
@@ -23,6 +45,15 @@ def sanitize_input(expr_str):
         "\u00D7": "*",  # Multiplication Sign (×)
         "\u00F7": "/",  # Division Sign (÷)
 
+        # Full-width Math Operators
+        "\uFF0B": "+",  # Full-width Plus
+        "\uFF0D": "-",  # Full-width Hyphen-Minus
+        "\uFF0A": "*",  # Full-width Asterisk
+        "\uFF0F": "/",  # Full-width Solidus (slash)
+        "\uFF1D": "=",  # Full-width Equals Sign
+        "\uFF05": "%",  # Full-width Percent
+        "\uFF0E": ".",  # Full-width Dot
+
         # Full-width Brackets
         "\uFF08": "(",  # Full-width (
         "\uFF09": ")",  # Full-width )
@@ -30,6 +61,13 @@ def sanitize_input(expr_str):
         "\uFF3D": "]",  # Full-width ]
         "\uFF5B": "{",  # Full-width {
         "\uFF5D": "}",  # Full-width }
+
+        # Full-width Semicolon
+        "\uFF1B": ";",  # Full-width Semicolon
+        
+        # Full-width Numbers (0-9)
+        "\uFF10": "0", "\uFF11": "1", "\uFF12": "2", "\uFF13": "3", "\uFF14": "4",
+        "\uFF15": "5", "\uFF16": "6", "\uFF17": "7", "\uFF18": "8", "\uFF19": "9",
         
         # Common Spaces
         "\u3000": " ",  # Ideographic Space
@@ -38,6 +76,16 @@ def sanitize_input(expr_str):
 
     for uni, asc in replacements.items():
         expr_str = expr_str.replace(uni, asc)
+    
+    # --- START OF MODIFICATION (Filter "Strange" Characters) ---
+    # Remove any character that is not on our whitelist
+    expr_str = DISALLOWED_CHARS_REGEX.sub("", expr_str)
+    # --- END OF MODIFICATION ---
+    
+    # --- START OF FIX (Bug C: Percentages) ---
+    # Add spaces around '%' to make parsing '10%of200' easier
+    expr_str = expr_str.replace("%", " % ")
+    # --- END OF FIX ---
     
     return expr_str
 
@@ -53,16 +101,33 @@ _CURRENT_VARIABLE_ASSIGNMENTS = {}  # Stores var_name -> Fraction value
 
 
 # ============================================================
-#                   BASIC NUMERIC EVAL
+#           BASIC NUMERIC EVAL (MODIFIED FOR ERRORS)
 # ============================================================
 
 def calculate_standard_expression(expr):
-    """Evaluates a simple numeric expression string."""
+    """
+    Evaluates a simple numeric expression string.
+    Returns a number (Fraction or float) on success.
+    Returns an 'ERROR: ...' string on failure.
+    """
     expr = expr.replace(" ", "")
 
-    # Basic validation for allowed characters
-    if not re.fullmatch(r"[0-9+\-*/.]+", expr):
-        return None  # Not purely numeric
+    # --- [DEBUG] ADDED PRINT ---
+    print(f"[DEBUG] calculate_standard_expression attempting: '{expr}'")
+
+    # --- START OF FIX ---
+    # This regex checks for any character that is NOT an allowed one.
+    if re.search(r"[^0-9+\-*/.]", expr):
+        # We re-run normalize just in case it's a recursive call
+        # that didn't get it, e.g., from parse_linear
+        expr = normalize_unary_minus(expr)
+        # Check again after normalization
+        if re.search(r"[^0-9+\-*/.]", expr):
+             print(f"[DEBUG] calculate_standard_expression REJECTED: '{expr}'")
+             # --- START OF MODIFICATION (User-friendly Error) ---
+             return f"ERROR: Invalid characters in numeric expression '{expr}'"
+             # --- END OF MODIFICATION ---
+    # --- END OF FIX ---
 
     try:
         # Use eval for simple math
@@ -75,9 +140,27 @@ def calculate_standard_expression(expr):
         # In float mode, just return the evaluated value
         return value
 
-    except:
-        # Catch errors like division by zero
-        return None
+    # --- START OF MODIFICATION (User-friendly Errors) ---
+    except ZeroDivisionError:
+        print(f"[DEBUG] calculate_standard_expression FAILED: Division by zero")
+        return "ERROR: Cannot divide by zero"
+
+    except SyntaxError as e:
+        msg = str(e).lower()
+        # Check for messages typical of missing/mismatched brackets
+        if "unexpected eof" in msg or "unmatched" in msg or "expected" in msg:
+            print(f"[DEBUG] calculate_standard_expression FAILED: Mismatched bracket")
+            return "ERROR: Mismatched or missing brackets"
+        else:
+            # Other syntax errors like '5 * / 2'
+            print(f"[DEBUG] calculate_standard_expression FAILED: Syntax error {e}")
+            return f"ERROR: Invalid syntax in expression (e.g., '5 * / 2')"
+
+    except Exception as e:
+        # Catch other errors like "ValueError: math domain error"
+        print(f"[DEBUG] calculate_standard_expression FAILED eval: {e}")
+        return f"ERROR: An unexpected error occurred during calculation: {e}"
+    # --- END OF MODIFICATION ---
 
 
 # ============================================================
@@ -109,13 +192,11 @@ def convert_percentages_in_expr(expr):
     This function performs a single pass of conversion, matching the leftmost occurrence.
     It expects X and Y to be numeric literals (possibly negative/decimal).
     """
-    # Pattern to match:
-    # Group 1: A number (integer or float, possibly negative). This is 'X'.
-    # `%`
-    # Optional `of` with spaces
-    # Group 2: Another number (integer or float, possibly negative). This is 'Y'.
-    # Word boundaries (\b) are crucial to ensure it matches whole numbers.
-    pattern = r"(\b-?\d+(?:\.\d+)?)\s*%\s*(?:of\s*)?\s*(\b-?\d+(?:\.\d+)?\b)"
+    # --- START OF FIX (Bug D: Percentages) ---
+    # We use 'of' here because sanitize_input has already lowercased everything.
+    pattern = r"((?<![\d.])-?\d+(?:\.\d+)?)\s*%\s*(?:of\s*)?(-?\d+(?:\.\d+)?)"
+    # --- END OF FIX ---
+
 
     # Use re.sub with a replacer function to perform the conversion
     def repl(match):
@@ -127,6 +208,51 @@ def convert_percentages_in_expr(expr):
 
     new_expr = re.sub(pattern, repl, expr, count=1)  # Only replace the first match
     return new_expr, (new_expr != expr)
+
+
+# ============================================================
+#            NORMALIZE UNARY MINUS & CLEANUP (FIXED)
+# ============================================================
+
+def normalize_unary_minus(expr: str) -> str:
+    """
+    Normalize unary minus occurrences so the parser can handle them uniformly.
+    This function:
+    - Adds a leading 0 if the expression starts with '-' (e.g., '-5' -> '0-5').
+    - Converts '(-5' -> '(0-5)'
+    - Removes stray spaces
+    - eval() is smart enough to handle '5*-2', '5--2', '5+-2', etc.
+      so we do *not* need to add 0s after other operators.
+    """
+    if not isinstance(expr, str):
+        return expr
+        
+    original_expr = expr # For debug
+
+    # Remove redundant spaces around operators for consistent regex handling
+    expr = re.sub(r"\s+", "", expr)
+
+    # If expression starts with a unary minus, prefix with 0
+    expr = re.sub(r"^\-", "0-", expr)
+    
+    # If a bracket is immediately followed by a minus, insert a 0 to make it binary:
+    # '(-5' -> '(0-5)'; same for '[' and '{'
+    expr = re.sub(r"([\(\[\{])\-", r"\g<1>0-", expr)
+    
+    # Collapse common sign patterns to canonical forms
+    # eval() can handle '5--2' and '5+-2', but '5*--2' is safer as '5*+2'
+    previous = None
+    while previous != expr:
+        previous = expr
+        expr = expr.replace("--", "+")
+        expr = expr.replace("+-", "-")
+        expr = expr.replace("++", "+")
+        expr = expr.replace("-+", "-")
+    
+    # --- [DEBUG] ADDED PRINT ---
+    if original_expr != expr:
+        print(f"[DEBUG] normalize_unary_minus: '{original_expr}' -> '{expr}'")
+    return expr
 
 
 # ============================================================
@@ -148,7 +274,7 @@ def print_step(bracket_name, updated):
 # ============================================================
 
 def split_top_level_equation(expr):
-    """Splits an equation at the main '=' sign, ignoring '=' inside brackets."""
+    """Splits an equation at the main '=' sign, newglecting '=' inside brackets."""
     level = 0
     for i, ch in enumerate(expr):
         if ch in "([{":
@@ -163,7 +289,7 @@ def split_top_level_equation(expr):
 
 
 # ============================================================
-#       FIND & SOLVE INNER BRACKETS FIRST (ANY TYPE)
+#       FIND & SOLVE INNER BRACKETS FIRST (ANY TYPE) (FIXED)
 # ============================================================
 
 def find_and_solve_innermost(expr, open_c, close_c, name):
@@ -171,12 +297,16 @@ def find_and_solve_innermost(expr, open_c, close_c, name):
     Finds the first innermost bracket pair of a specific type (e.g., '()')
     and solves the expression inside it.
     """
+    # Build a pattern that finds the innermost pair by disallowing the open or close characters
+    # inside the content. Use non-greedy qualifier to be safe.
+    # Note: open_c and close_c are single characters like '(' and ')'.
     open_re = re.escape(open_c)
     close_re = re.escape(close_c)
 
-    # Pattern: open_char, followed by any characters NOT open or close, then close_char
-    # This finds the innermost pair.
-    pattern = rf"{open_re}([^ {open_re}{close_re}]+){close_re}"
+    # --- START OF FIX (Bug A/B: Nested Brackets) ---
+    pattern = rf"{open_re}([^{re.escape(open_c)}{re.escape(close_c)}]+?){close_re}"
+    # --- END OF FIX ---
+    
     m = re.search(pattern, expr)
     if not m:
         return expr, False  # No brackets of this type found
@@ -184,12 +314,15 @@ def find_and_solve_innermost(expr, open_c, close_c, name):
     inner = m.group(1)  # The content inside the brackets
     full = m.group(0)  # The full bracket expression, e.g., "(2+2)"
 
+    # --- [DEBUG] ADDED PRINT ---
+    print(f"[DEBUG] find_and_solve_innermost: Found '{full}'. Solving inner: '{inner}'")
+
     # Recursively solve the inner part, indicating this is a recursive call
     solved = solve_expression(inner, print_steps=False, _is_recursive_call=True)
     if isinstance(solved, str) and solved.startswith("ERROR"):
         return solved, True  # Propagate errors
 
-    # Replace the bracketed expression with its solved value
+    # Replace the bracketed expression with its solved value (one occurrence only)
     new_expr = expr.replace(full, str(solved), 1)
 
     # Print the step if enabled
@@ -200,7 +333,7 @@ def find_and_solve_innermost(expr, open_c, close_c, name):
 
 
 # ============================================================
-#             PARSE LINEAR EXPRESSIONS (ax + b)
+#        PARSE LINEAR EXPRESSIONS (ax + b) (MODIFIED)
 # ============================================================
 
 def parse_linear(expr):
@@ -210,8 +343,16 @@ def parse_linear(expr):
     
     NOTE: This function *always* uses Fractions internally for precision
     during the solving steps. The final result is formatted based on RETURN_FRACTION.
+    
+    Raises:
+        ValueError: If a constant part contains an invalid expression.
     """
-    expr = expr.replace(" ", "")
+    # --- [DEBUG] ADDED PRINT ---
+    print(f"[DEBUG] parse_linear called with: '{expr}'")
+    
+    # We must normalize *before* parsing
+    expr = normalize_unary_minus(expr.replace(" ", ""))
+    
     # Add '1' to standalone 'x' for easier parsing (e.g., 'x' → '1x')
     expr = re.sub(r"(?<![\d.])x", "1x", expr)
     # Standardize subtraction to "add negative"
@@ -236,9 +377,25 @@ def parse_linear(expr):
             a += Fraction(coef)
         else:
             # This part is a constant
-            # Convert constant to Fraction for precise math
-            b += Fraction(p)
-
+            
+            # --- START OF MODIFICATION (Handle Errors) ---
+            # The constant part 'p' might be a simple number ('5')
+            # or a complex numeric expression ('10*20') left over
+            # from bracket resolution. We must evaluate it.
+            evaluated_constant = calculate_standard_expression(p)
+            
+            # Check if calculate_standard_expression returned an error string
+            if isinstance(evaluated_constant, str) and evaluated_constant.startswith("ERROR"):
+                # Raise an exception with the user-friendly error message
+                error_msg = evaluated_constant.replace("ERROR: ", "")
+                print(f"[DEBUG] parse_linear: Invalid constant part: '{p}' -> {error_msg}")
+                raise ValueError(f"In constant part '{p}': {error_msg}")
+                
+            # Add the result (which is a Fraction or float)
+            b += evaluated_constant
+            # --- END OF MODIFICATION ---
+            
+    print(f"[DEBUG] parse_linear result: a={a}, b={b}")
     return a, b
 
 
@@ -250,8 +407,14 @@ def solve_equation(left, right):
     """
     Solves a linear equation in the form 'ax + b = cx + d'.
     'left' and 'right' are the simplified string expressions from each side.
+    
+    Note: This function can raise ValueError if parse_linear fails.
     """
+    # --- [DEBUG] ADDED PRINT ---
+    print(f"[DEBUG] solve_equation: L='{left}' R='{right}'")
+    
     # Parse both sides to get their 'a' and 'b' components (as Fractions)
+    # This will raise ValueError if parsing fails (e.g., 'x + (5/0)')
     a1, b1 = parse_linear(left)
     a2, b2 = parse_linear(right)
 
@@ -261,26 +424,24 @@ def solve_equation(left, right):
 
     if A == 0:
         if B == 0:
-            return "All real numbers satisfy the equation"
-        return "No solution"
+            return "all real numbers satisfy the equation"
+        return "no solution"
 
     # Solve for x: x = B / A
     x = B / A  # x is now a Fraction object
 
-    # --- THIS IS THE FIX ---
     # Now, format the final Fraction 'x' based on the global mode
     if RETURN_FRACTION:
         x = x.limit_denominator()
     else:
         # Convert the final Fraction object to a float for float mode
         x = float(x)
-    # --- END OF FIX ---
 
     return f"x = {x}"
 
 
 # ============================================================
-#                   MAIN EXPRESSION SOLVER
+#               MAIN EXPRESSION SOLVER (MODIFIED)
 # ============================================================
 
 def solve_expression(expr_str, print_steps=True, _is_recursive_call=False):
@@ -291,12 +452,17 @@ def solve_expression(expr_str, print_steps=True, _is_recursive_call=False):
     global GLOBAL_STEP
     global _CURRENT_VARIABLE_ASSIGNMENTS
 
-    # --- THIS IS THE FIX ---
-    # Sanitize all incoming strings to use ASCII equivalents first
+    # --- [DEBUG] ADDED PRINT ---
+    print(f"[DEBUG] solve_expression called with: '{expr_str}' (Recursive: {_is_recursive_call})")
+
+    # --- Sanitize all incoming strings to use ASCII equivalents, force lowercase, and strip invalid chars
     expr_str = sanitize_input(expr_str)
-    # --- END OF FIX ---
+    # --- END SANITIZE ---
 
     expr = convert_mixed_numbers(expr_str).replace(" ", "")
+
+    # Normalize unary minus patterns BEFORE doing variable substitution / bracket solving
+    expr = normalize_unary_minus(expr)
 
     # Apply variable assignments only for the initial, top-level call to solve_expression
     # or if explicitly flagged as needing substitution (e.g., when evaluating assignment values).
@@ -305,38 +471,73 @@ def solve_expression(expr_str, print_steps=True, _is_recursive_call=False):
         substituted_expr = expr
 
         # Sort variable assignments by length of variable name (descending)
-        # to ensure longer variable names are substituted before shorter ones that might be substrings
         sorted_assignments = sorted(
             _CURRENT_VARIABLE_ASSIGNMENTS.items(),
             key=lambda item: len(item[0]),
             reverse=True,
         )
 
+        # ==================================================================
+        #                 --- START OF LOGIC FIX ---
+        # ==================================================================
         for var_name, var_value in sorted_assignments:
-            # Convert the stored value (which might be a Fraction) to string
-            # In float mode, this might be a float, in fraction mode, a Fraction string
-            # We will rely on the str() representation for substitution.
             val_str = str(var_value)
+            # Always parenthesize substitution for safety
+            val_str_paren = f"({val_str})"
+            var_name_re = re.escape(var_name)
             
-            # Handle cases like '2x', '3.5y', etc. (numeric coefficient + variable)
-            # Use word boundaries \b to ensure full variable name matching
+            # --- START OF MODIFICATION (Lowercase) ---
+            word_chars = r"a-z0-9_" 
+            # --- END OF MODIFICATION ---
+
+            # --- FIX 2: Corrected Coefficient Regex ---
+            coef_regex = rf"\b(?P<coef>(\d+(\.\d*)?|\.\d+)){var_name_re}\b"
             substituted_expr = re.sub(
-                rf"(?P<coef>\b\d+(?:\.\d+)?){re.escape(var_name)}\b",
-                rf"\g<coef>*({val_str})",
+                coef_regex,
+                rf"\g<coef>*({val_str})", # No extra parens on coef
                 substituted_expr,
             )
-            # Handle standalone variable names with word boundaries
+
+            # --- FIX 1 (Bug C): Implicit Multiplication (Case A: Preceding) ---
+            # SYNTAXERROR FIX: Escaped literal braces with {{ and }}
+            pre_regex = rf"(?P<pre>[{word_chars}\)\]\}}]}}])(\s*)\b{var_name_re}\b"
             substituted_expr = re.sub(
-                rf"\b{re.escape(var_name)}\b", rf"({val_str})", substituted_expr
+                pre_regex,
+                rf"\g<pre>*{val_str_paren}",
+                substituted_expr
             )
 
+            # --- FIX 1 (Bug C): Implicit Multiplication (Case B: Following) ---
+            # SYNTAXERROR FIX: Escaped literal braces with {{ and }}
+            post_regex = rf"\b{var_name_re}\b(\s*)(?P<post>[{word_chars}\(\[\{{{{])"
+            substituted_expr = re.sub(
+                post_regex,
+                rf"{val_str_paren}*\g<post>",
+                substituted_expr
+            )
+
+            # --- Standard Standalone Replacement ---
+            # This MUST run last
+            standalone_regex = rf"\b{var_name_re}\b"
+            substituted_expr = re.sub(
+                standalone_regex,
+                val_str_paren,
+                substituted_expr
+            )
+        # ==================================================================
+        #                   --- END OF LOGIC FIX ---
+        # ==================================================================
+
         if substituted_expr != original_expr:
-            if print_steps:  # Only print this step if print_steps is enabled for the top-level call
+            if print_steps:
                 print(f"  (Auto) Substituted variables: {original_expr} -> {substituted_expr}")
         expr = substituted_expr
 
-    # Disable step-by-step printing if there are no brackets or percentage operators
-    if print_steps and all(ch not in expr for ch in "()[]{}") and not re.search(r"\d+%", expr):
+    # After substitution, normalize unary minus again in case substitutions produced new patterns
+    expr = normalize_unary_minus(expr)
+
+    # Disable step-by-step printing
+    if print_steps and all(ch not in expr for ch in "()[]{}") and not re.search(r"%\s*(?:of\b\s*)?", expr):
         print_steps = False
 
     if print_steps:
@@ -348,21 +549,28 @@ def solve_expression(expr_str, print_steps=True, _is_recursive_call=False):
     eq = split_top_level_equation(expr)
     if eq is not None:
         L, R = eq
-        # Solve left and right sides independently first, indicating recursive calls
-        # We pass print_steps=False to silence the step-by-step output for these
-        # intermediate recursive calls.
-        LS = solve_expression(L, print_steps=False, _is_recursive_call=True)
-        RS = solve_expression(R, print_steps=False, _is_recursive_call=True)
+        try:
+            # Solve left and right sides independently first, indicating recursive calls
+            LS = solve_expression(L, print_steps=False, _is_recursive_call=True)
+            if isinstance(LS, str) and LS.startswith("ERROR"):
+                return LS # Propagate error
+            
+            RS = solve_expression(R, print_steps=False, _is_recursive_call=True)
+            if isinstance(RS, str) and RS.startswith("ERROR"):
+                return RS # Propagate error
 
-        # Check for errors from recursive calls
-        if isinstance(LS, str) and LS.startswith("ERROR"):
-            return LS
-        if isinstance(RS, str) and RS.startswith("ERROR"):
-            return RS
-
-        # Then, use the simplified linear expressions to solve for 'x'
-        # Note: LS and RS will be string representations (e.g., "5.0+2x" or "10/3")
-        return solve_equation(str(LS), str(RS))
+            # Then, use the simplified linear expressions to solve for 'x'
+            # This can raise a ValueError if parse_linear fails (e.g., 'x = 1/0')
+            return solve_equation(str(LS), str(RS))
+            
+        except ValueError as e:
+            # Catch errors from parse_linear (via solve_equation)
+            print(f"[DEBUG] solve_equation failed: {e}")
+            return f"ERROR: {e}"
+        except Exception as e:
+            # Catch any other unexpected errors during equation solving
+            print(f"[DEBUG] solve_expression (equation) failed: {e}")
+            return f"ERROR: An unexpected error occurred while solving equation: {e}"
 
     # --- No equation, so solve as a single expression ---
     if print_steps:
@@ -395,17 +603,19 @@ def solve_expression(expr_str, print_steps=True, _is_recursive_call=False):
                     print_step("Percentage Conversion", expr)
                 changed = True
                 # Continue the while loop
+        
+        # After each change, re-normalize
+        if changed:
+            expr = normalize_unary_minus(expr)
 
     if print_steps:
         print("--- Finished Bracket/Percentage Resolution ---")
         print("\n--- Final Calculation ---")
 
     # If 'x' remains after all brackets and substitutions are done,
-    # it's a symbolic expression (e.g., from 'a=2; a+x' -> '2+x')
     if "x" in expr:
-        # We can try to "parse" it to clean it up (e.g., '2+x+5' -> '7+1x')
-        # but for now, just return the simplified string expression.
-        # Let's try to parse and rebuild it for a cleaner look.
+        # --- START OF MODIFICATION (Handle Errors) ---
+        # Try to parse and rebuild it for a cleaner look.
         try:
             a, b = parse_linear(expr) # This will use Fractions
             
@@ -443,26 +653,30 @@ def solve_expression(expr_str, print_steps=True, _is_recursive_call=False):
             else: # Failsafe
                 return expr
 
-        except Exception:
-             return expr # Return the raw string if parsing fails
+        except ValueError as e:
+             # This catches user-friendly errors from parse_linear
+             print(f"[DEBUG] parse_linear failed on final 'x' expression: {e}")
+             return f"ERROR: {e}" # Return the friendly error
+        except Exception as e:
+             # Catch-all for other parsing errors
+             print(f"[DEBUG] Failed to parse final 'x' expression: {e}")
+             return f"ERROR: Could not parse final expression '{expr}'"
+        # --- END OF MODIFICATION ---
 
 
+    # --- START OF MODIFICATION (Handle Errors) ---
     # No 'x', so it's a purely numeric expression
+    # calculate_standard_expression now returns a number or an "ERROR:" string
     numeric = calculate_standard_expression(expr)
-    if numeric is None:
-        # Failsafe: if the expression was just a sanitized bracket, e.g. "{"
-        # which becomes "(", the numeric calc will fail.
-        # Give a clearer error message than just "(", which might have been "{"
-        if expr_str.strip() != expr.strip() and not re.search(r'\d', expr):
-             return f"ERROR: Invalid expression after sanitizing '{expr_str}'"
-        
-        return f"ERROR: Invalid numeric expression '{expr}'"
-
+    
+    # If it's an error string, return it directly.
+    # Otherwise, it's the valid numeric result.
     return numeric
+    # --- END OF MODIFICATION ---
 
 
 # ============================================================
-#               WEB APP INTERFACE FUNCTION
+#               WEB APP INTERFACE FUNCTION (MODIFIED)
 # ============================================================
 
 def run_calculator(mode, expression_lines):
@@ -502,10 +716,7 @@ def run_calculator(mode, expression_lines):
 
             try:
                 # --- Sanitize the *raw* input line *before* splitting by semicolon ---
-                # This ensures "a=5；b=3" (with a full-width semicolon) also works.
-                # We add '；' (U+FF1B) to the sanitizer for this.
-                
-                raw = sanitize_input(raw).replace("\uFF1B", ";") # Full-width semicolon
+                raw = sanitize_input(raw)
                 
                 # Split by semicolon, clean whitespace
                 parts = [p.strip() for p in raw.split(";") if p.strip()]
@@ -513,10 +724,19 @@ def run_calculator(mode, expression_lines):
 
                 for i, part in enumerate(parts):
                     # Check if it's an assignment (e.g., 'a = 5')
-                    match = re.match(r"^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*=(.*)", part)
+                    # --- START OF MODIFICATION (Lowercase) ---
+                    match = re.match(r"^\s*([a-z_][a-z0-9_]*)\s*=(.*)", part)
+                    # --- END OF MODIFICATION ---
                     if match:
                         var_name = match.group(1)
                         value_expr_str = match.group(2).strip()
+                        
+                        if not value_expr_str:
+                             # --- START OF MODIFICATION (User-friendly Error) ---
+                             err_msg = f"ERROR: No value provided for assignment of '{var_name}'"
+                             print(f"\n{err_msg}")
+                             raise ValueError(err_msg)
+                             # --- END OF MODIFICATION ---
 
                         # Substitute any *already defined* variables into this assignment
                         temp_value_expr_str = value_expr_str
@@ -525,41 +745,65 @@ def run_calculator(mode, expression_lines):
                         )
                         for existing_var, existing_val in sorted_current_assignments:
                             existing_val_str = str(existing_val)
-                            # Handle '2var'
+                            
+                            # --- Use the same logic as the main solver for consistency ---
+                            existing_var_re = re.escape(existing_var)
+                            # --- START OF MODIFICATION (Lowercase) ---
+                            word_chars = r"a-z0-9_" 
+                            # --- END OF MODIFICATION ---
+                            
+                            # Coef
+                            coef_regex = rf"\b(?P<coef>(\d+(\.\d*)?|\.\d+)){existing_var_re}\b"
                             temp_value_expr_str = re.sub(
-                                rf"(?P<coef>\b\d+(?:\.\d+)?){re.escape(existing_var)}\b",
-                                rf"\g<coef>*({existing_val_str})",
-                                temp_value_expr_str,
+                                coef_regex, rf"\g<coef>*({existing_val_str})", temp_value_expr_str
                             )
-                            # Handle 'var'
+                            # Pre
+                            # SYNTAXERROR FIX: Escaped literal braces with {{ and }}
+                            pre_regex = rf"(?P<pre>[{word_chars}\)\]\}}]}}])(\s*)\b{existing_var_re}\b"
                             temp_value_expr_str = re.sub(
-                                rf"\b{re.escape(existing_var)}\b", rf"({existing_val_str})", temp_value_expr_str
+                                pre_regex, rf"\g<pre>*({existing_val_str})", temp_value_expr_str
+                            )
+                            # Post
+                            # SYNTAXERROR FIX: Escaped literal braces with {{ and }}
+                            post_regex = rf"\b{existing_var_re}\b(\s*)(?P<post>[{word_chars}\(\[\{{{{])"
+                            temp_value_expr_str = re.sub(
+                                post_regex, rf"({existing_val_str})*\g<post>", temp_value_expr_str
+                            )
+                            # Standalone
+                            standalone_regex = rf"\b{existing_var_re}\b"
+                            temp_value_expr_str = re.sub(
+                                standalone_regex, rf"({existing_val_str})", temp_value_expr_str
                             )
 
+                        # --- START OF MODIFICATION (User-friendly Error) ---
                         # Solve the expression for the assignment
-                        # Pass _is_recursive_call=True to prevent double-substitution
-                        # solve_expression will sanitize the temp_value_expr_str automatically
-                        solved_value = solve_expression(temp_value_expr_str, print_steps=False, _is_recursive_call=True)
-
+                        # We add a try...except block here to catch errors from solve_expression
+                        # (like ValueErrors from parse_linear)
+                        try:
+                            solved_value = solve_expression(temp_value_expr_str, print_steps=False, _is_recursive_call=True)
+                        except Exception as e:
+                            # Catch any unexpected exceptions during assignment solving
+                            err_msg = f"ERROR: Invalid assignment for '{var_name}'. Could not solve '{temp_value_expr_str}': {e}"
+                            print(f"\n{err_msg}")
+                            raise ValueError(err_msg)
+                        
                         if isinstance(solved_value, str) and solved_value.startswith("ERROR"):
-                            print(f"\nERROR in assignment for {var_name}: {solved_value}")
-                            raise ValueError(f"Invalid assignment for {var_name}")
+                            err_msg = f"ERROR: Invalid assignment for '{var_name}'. {solved_value.replace('ERROR: ', '')}"
+                            print(f"\n{err_msg}")
+                            raise ValueError(err_msg)
+                        # --- END OF MODIFICATION ---
+                        
                         elif isinstance(solved_value, str) and "x" in solved_value and var_name == "x":
                             # This is an equation for x, e.g., 'x = 2x + 5'
                             expression_to_solve = part
                             is_equation_for_x = True
                             break # This is the final expression
                         elif isinstance(solved_value, str) and "x" in solved_value:
-                            # Error: assigning an 'x' expression to another variable
-                            print(
-                                f"\nERROR: Variable '{var_name}' assignment '{value_expr_str}' resolved to '{solved_value}', which still contains 'x'. Only 'x' can be implicitly defined via equation."
-                            )
-                            raise ValueError(f"Invalid assignment for {var_name}")
-                        elif solved_value is None:
-                            print(
-                                f"\nERROR: Invalid assignment for {var_name}: '{value_expr_str}' did not resolve to a numeric value."
-                            )
-                            raise ValueError(f"Invalid assignment for {var_name}")
+                            # --- START OF MODIFICATION (User-friendly Error) ---
+                            err_msg = f"ERROR: Invalid assignment for '{var_name}'. Result '{solved_value}' still contains 'x'. Only 'x' can be defined by an equation."
+                            print(f"\n{err_msg}")
+                            raise ValueError(err_msg)
+                            # --- END OF MODIFICATION ---
                         else:
                             # Store the solved value (will be Fraction or float)
                             _CURRENT_VARIABLE_ASSIGNMENTS[var_name] = solved_value
@@ -571,7 +815,7 @@ def run_calculator(mode, expression_lines):
                         if i == len(parts) - 1 or "=" in part:
                             break
                         else:
-                            # This part is intermediate noise, ignore it
+                            # This part is intermediate noise, newglect it
                             expression_to_solve = ""
 
                 # After the loop, check what to do
@@ -581,27 +825,26 @@ def run_calculator(mode, expression_lines):
                         print("\nNo explicit expression to evaluate. Final assignments:")
                         for var, val in _CURRENT_VARIABLE_ASSIGNMENTS.items():
                             print(f"  {var} = {val}")
-                        # continue # This would skip the ----- separator, let's print it
                     else:
                         print(f"ERROR: Could not parse expression or assignments: '{raw}'")
-                        # continue
+                
                 elif not parts:
-                    # This case should be caught by the 'if not raw.strip()' at the start
                     continue
                 else:
                     # We have an expression_to_solve
                     print(f"\nProcessing: {expression_to_solve}")
-                    # This is a top-level call, so print_steps=True (it will auto-disable if simple)
-                    # solve_expression will sanitize the expression_to_solve string
+                    # This call will now return a user-friendly "ERROR:" string on failure
                     result = solve_expression(expression_to_solve, print_steps=True)
                     print("\n" + "=" * 40)
                     print("RESULT:", result)
                     print("=" * 40)
 
             except Exception as e:
+                # This catches the ValueErrors we raised during assignment
+                # or any other unexpected error.
+                # The 'e' object now contains our user-friendly message.
                 print(f"\nAN ERROR OCCURRED: {e}")
                 print("=" * 40)
-                # continue # Let the separator print
 
             # Add a separator for multiple batches of input
             print("\n" + "-" * 40 + "\n")
@@ -648,14 +891,6 @@ if __name__ == "__main__":
             continue  # Skip empty input
 
         # --- Use the run_calculator function to process the input ---
-        # We pass the mode and the raw string as a single-item list
-        # The run_calculator function handles all the logic and printing
-        
-        # We don't need to redirect stdout here, because run_calculator
-        # will redirect it, capture the output, and then return it as a string.
-        # We just need to print that string.
-        
-        # The `raw` string will be sanitized *inside* run_calculator/solve_expression
         output_string = run_calculator(mode, [raw])
         
         # Print the captured output from run_calculator
