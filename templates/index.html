@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Big Calculator (Web)</title>
     
-    <!-- Load modern font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -54,6 +53,15 @@
             padding-bottom: 0.5rem;
         }
 
+        /* NEW: Section heading style */
+        h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #374151;
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+        }
+
         .hint {
             color: #6b7280;
             margin-bottom: 1.5rem;
@@ -71,7 +79,7 @@
 
         /* --- Form Elements --- */
         form {
-            margin-top: 1.5rem;
+            margin-top: 1rem; /* Reduced top margin, h3 will handle it */
         }
         
         /* --- Custom Radio Buttons --- */
@@ -139,7 +147,7 @@
             box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); /* Blue glow */
         }
 
-        /* --- Checkbox Wrapper (NEW) --- */
+        /* --- Checkbox Wrapper --- */
         .checkbox-wrapper {
             display: flex;
             align-items: center;
@@ -172,17 +180,19 @@
 
         /* --- Submit Button --- */
         button[type="submit"] {
-            display: inline-block;
+            display: block; /* Changed from inline-block */
+            width: 100%; /* NEW: Make button full-width */
             font-family: 'Inter', sans-serif;
             font-size: 1rem;
             font-weight: 600;
             color: #ffffff;
             background-color: #3b82f6; /* Primary blue */
             border: none;
-            padding: 0.75rem 1.5rem;
+            padding: 0.85rem 1.5rem; /* Increased padding */
             border-radius: 0.5rem;
             cursor: pointer;
             transition: background-color 0.2s;
+            margin-top: 1.5rem; /* NEW: Add space above button */
         }
 
         button[type="submit"]:hover {
@@ -200,6 +210,17 @@
             font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
             font-size: 0.9rem;
             color: #111827;
+            min-height: 120px; /* NEW: Give it a minimum height */
+        }
+        
+        /* NEW: Style for the output placeholder */
+        pre.output-placeholder {
+            color: #6b7280; /* Use hint color */
+            font-style: italic;
+            /* Center the text (optional, but nice for a placeholder) */
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         
         /* --- Responsive Adjustments --- */
@@ -216,6 +237,9 @@
             h2 {
                 font-size: 1.25rem;
             }
+            h3 {
+                font-size: 1rem; /* Adjust h3 for mobile */
+            }
             /* Stack radio buttons on mobile */
             .mode-toggle {
                 flex-direction: column;
@@ -231,13 +255,14 @@
     <div class="container">
         <h1>Big Calculator (Web)</h1>
         <p class="hint">
-          Select your output mode (Fraction or Float) below.
-          Each expression you enter in the box (one per line) will be calculated using that mode.<br>
-          Example (one line):<br>
-          <code>a=5; b=3; a+b</code>
+          Select your output mode and enter expressions, one per line. You can also assign variables.<br>
+          Example 1 (simple): <code>(1/2) + (1/4)</code><br>
+          Example 2 (variables): <code>a=5; b=3; a+b</code>
         </p>
 
         <form method="POST">
+            <h3>1. Configuration</h3>
+            
             <div class="mode-toggle">
                 <label>
                     <input type="radio" name="output_mode" value="fraction" {% if request.form.output_mode != 'float' %}checked{% endif %}>
@@ -249,21 +274,23 @@
                 </label>
             </div>
             
-            <textarea name="inputs" rows="8" placeholder="Enter one expression per line, in order...">{{ request.form.inputs }}</textarea>
-            
-            <!-- START: Added Checkbox Section -->
             <div class="checkbox-wrapper">
                 <input type="checkbox" id="show_steps" name="show_steps" value="true" {% if request.form.show_steps %}checked{% endif %}>
                 <label for="show_steps">Show steps</label>
             </div>
-            <!-- END: Added Checkbox Section -->
+            
+            <h3>2. Input Expressions</h3>
+            
+            <textarea name="inputs" rows="8" placeholder="Enter one expression per line, in order...">{{ request.form.inputs }}</textarea>
             
             <button type="submit">Run Calculator</button>
         </form>
 
+        <h2>Output</h2>
         {% if output %}
-            <h2>Output</h2>
             <pre>{{ output }}</pre>
+        {% else %}
+            <pre class="output-placeholder">Click "Run Calculator" to see your results.</pre>
         {% endif %}
     </div>
 </body>

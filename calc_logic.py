@@ -119,9 +119,10 @@ def calculate_standard_expression(expr, log_buffer=None):
     """
     expr = expr.replace(" ", "")
 
-    # --- [DEBUG] ADDED PRINT ---
+    # --- START OF MODIFICATION ---
     if log_buffer:
-        log_buffer.append(f"[DEBUG] calculate_standard_expression attempting: '{expr}'")
+        log_buffer.append(f"  ... Attempting to calculate: '{expr}'")
+    # --- END OF MODIFICATION ---
 
     # --- START OF FIX ---
     # This regex checks for any character that is NOT an allowed one.
@@ -142,7 +143,9 @@ def calculate_standard_expression(expr, log_buffer=None):
         if re.search(r"[^0-9+\-*/.()]", expr):
         # --- END OF MODIFICATION ---
              if log_buffer:
-                 log_buffer.append(f"[DEBUG] calculate_standard_expression REJECTED: '{expr}'")
+                 # --- START OF MODIFICATION ---
+                 log_buffer.append(f"  ... Calculation REJECTED (invalid chars): '{expr}'")
+                 # --- END OF MODIFICATION ---
              # --- START OF MODIFICATION (User-friendly Error) ---
              return f"ERROR: Invalid characters in numeric expression '{expr}'"
              # --- END OF MODIFICATION ---
@@ -163,7 +166,9 @@ def calculate_standard_expression(expr, log_buffer=None):
     # --- START OF MODIFICATION (User-friendly Errors) ---
     except ZeroDivisionError:
         if log_buffer:
-            log_buffer.append(f"[DEBUG] calculate_standard_expression FAILED: Division by zero")
+            # --- START OF MODIFICATION ---
+            log_buffer.append(f"  ... Calculation FAILED: Division by zero")
+            # --- END OF MODIFICATION ---
         return "ERROR: Cannot divide by zero"
 
     except SyntaxError as e:
@@ -171,18 +176,24 @@ def calculate_standard_expression(expr, log_buffer=None):
         # Check for messages typical of missing/mismatched brackets
         if "unexpected eof" in msg or "unmatched" in msg or "expected" in msg:
             if log_buffer:
-                log_buffer.append(f"[DEBUG] calculate_standard_expression FAILED: Mismatched bracket")
+                # --- START OF MODIFICATION ---
+                log_buffer.append(f"  ... Calculation FAILED: Mismatched bracket")
+                # --- END OF MODIFICATION ---
             return "ERROR: Mismatched or missing brackets"
         else:
             # Other syntax errors like '5 * / 2'
             if log_buffer:
-                log_buffer.append(f"[DEBUG] calculate_standard_expression FAILED: Syntax error {e}")
+                # --- START OF MODIFICATION ---
+                log_buffer.append(f"  ... Calculation FAILED: Syntax error {e}")
+                # --- END OF MODIFICATION ---
             return f"ERROR: Invalid syntax in expression (e.g., '5 * / 2')"
 
     except Exception as e:
         # Catch other errors like "ValueError: math domain error"
         if log_buffer:
-            log_buffer.append(f"[DEBUG] calculate_standard_expression FAILED eval: {e}")
+            # --- START OF MODIFICATION ---
+            log_buffer.append(f"  ... Calculation FAILED: {e}")
+            # --- END OF MODIFICATION ---
         return f"ERROR: An unexpected error occurred during calculation: {e}"
     # --- END OF MODIFICATION ---
 
@@ -286,9 +297,10 @@ def normalize_unary_minus(expr: str, log_buffer=None) -> str:
     #     expr = expr.replace("-+", "-")
     # --- LÕPEB PARANDUS ---
     
-    # --- [DEBUG] ADDED PRINT ---
+    # --- START OF MODIFICATION ---
     if log_buffer and original_expr != expr:
-        log_buffer.append(f"[DEBUG] normalize_unary_minus: '{original_expr}' -> '{expr}'")
+        log_buffer.append(f"  ... Normalizing signs: '{original_expr}' -> '{expr}'")
+    # --- END OF MODIFICATION ---
     return expr
 
 
@@ -352,9 +364,10 @@ def find_and_solve_innermost(expr, open_c, close_c, name, log_buffer=None):
     inner = m.group(1)  # The content inside the brackets
     full = m.group(0)  # The full bracket expression, e.g., "(2+2)"
 
-    # --- [DEBUG] ADDED PRINT ---
+    # --- START OF MODIFICATION ---
     if log_buffer:
-        log_buffer.append(f"[DEBUG] find_and_solve_innermost: Found '{full}'. Solving inner: '{inner}'")
+        log_buffer.append(f"  ... Found innermost {name}: '{full}'. Solving content: '{inner}'")
+    # --- END OF MODIFICATION ---
 
     # --- START OF BUG FIX (GLOBAL_STEP) ---
     # Save the global step value, because the recursive call
@@ -455,9 +468,10 @@ def parse_linear(expr, log_buffer=None):
     Raises:
         ValueError: If a constant part contains an invalid expression.
     """
-    # --- [DEBUG] ADDED PRINT ---
+    # --- START OF MODIFICATION ---
     if log_buffer:
-        log_buffer.append(f"[DEBUG] parse_linear called with: '{expr}'")
+        log_buffer.append(f"  ... Analyzing linear expression: '{expr}'")
+    # --- END OF MODIFICATION ---
     
     # We must normalize *before* parsing
     expr = normalize_unary_minus(expr.replace(" ", ""), log_buffer=log_buffer)
@@ -498,7 +512,9 @@ def parse_linear(expr, log_buffer=None):
                 # Raise an exception with the user-friendly error message
                 error_msg = evaluated_constant.replace("ERROR: ", "")
                 if log_buffer:
-                    log_buffer.append(f"[DEBUG] parse_linear: Invalid constant part: '{p}' -> {error_msg}")
+                    # --- START OF MODIFICATION ---
+                    log_buffer.append(f"  ... FAILED: Invalid constant part '{p}': {error_msg}")
+                    # --- END OF MODIFICATION ---
                 raise ValueError(f"In constant part '{p}': {error_msg}")
                 
             # Add the result (which is a Fraction or float)
@@ -506,7 +522,9 @@ def parse_linear(expr, log_buffer=None):
             # --- END OF MODIFICATION ---
             
     if log_buffer:
-        log_buffer.append(f"[DEBUG] parse_linear result: a={a}, b={b}")
+        # --- START OF MODIFICATION ---
+        log_buffer.append(f"  ... Linear analysis result: (a={a}, b={b})")
+        # --- END OF MODIFICATION ---
     return a, b
 
 
@@ -521,9 +539,10 @@ def solve_equation(left, right, log_buffer=None):
     
     Note: This function can raise ValueError if parse_linear fails.
     """
-    # --- [DEBUG] ADDED PRINT ---
+    # --- START OF MODIFICATION ---
     if log_buffer:
-        log_buffer.append(f"[DEBUG] solve_equation: L='{left}' R='{right}'")
+        log_buffer.append(f"  ... Solving equation: '{left}' = '{right}'")
+    # --- END OF MODIFICATION ---
     
     # Parse both sides to get their 'a' and 'b' components (as Fractions)
     # This will raise ValueError if parsing fails (e.g., 'x + (5/0)')
@@ -564,9 +583,9 @@ def solve_expression(expr_str, print_steps=True, _is_recursive_call=False, log_b
     global GLOBAL_STEP
     global _CURRENT_VARIABLE_ASSIGNMENTS
 
-    # --- [DEBUG] ADDED PRINT ---
-    if log_buffer and print_steps:
-        log_buffer.append(f"[DEBUG] solve_expression called with: '{expr_str}' (Recursive: {_is_recursive_call})")
+    # --- START OF MODIFICATION (Removed redundant log) ---
+    # The 'Processing: ...' message in run_calculator is sufficient
+    # --- END OF MODIFICATION ---
 
     # --- Sanitize all incoming strings to use ASCII equivalents, force lowercase, and strip invalid chars
     expr_str = sanitize_input(expr_str)
@@ -703,12 +722,16 @@ def solve_expression(expr_str, print_steps=True, _is_recursive_call=False, log_b
         except ValueError as e:
             # Catch errors from parse_linear (via solve_equation)
             if log_buffer:
-                log_buffer.append(f"[DEBUG] solve_equation failed: {e}")
+                # --- START OF MODIFICATION ---
+                log_buffer.append(f"  ... Equation solving failed: {e}")
+                # --- END OF MODIFICATION ---
             return f"ERROR: {e}"
         except Exception as e:
             # Catch any other unexpected errors during equation solving
             if log_buffer:
-                log_buffer.append(f"[DEBUG] solve_expression (equation) failed: {e}")
+                # --- START OF MODIFICATION ---
+                log_buffer.append(f"  ... Expression (equation) solving failed: {e}")
+                # --- END OF MODIFICATION ---
             return f"ERROR: An unexpected error occurred while solving equation: {e}"
 
     # --- No equation, so solve as a single expression ---
@@ -815,12 +838,16 @@ def solve_expression(expr_str, print_steps=True, _is_recursive_call=False, log_b
         except ValueError as e:
              # This catches user-friendly errors from parse_linear
              if log_buffer:
-                log_buffer.append(f"[DEBUG] parse_linear failed on final 'x' expression: {e}")
+                # --- START OF MODIFICATION ---
+                log_buffer.append(f"  ... Failed to simplify final 'x' expression: {e}")
+                # --- END OF MODIFICATION ---
              return f"ERROR: {e}" # Return the friendly error
         except Exception as e:
              # Catch-all for other parsing errors
              if log_buffer:
-                log_buffer.append(f"[DEBUG] Failed to parse final 'x' expression: {e}")
+                # --- START OF MODIFICATION ---
+                log_buffer.append(f"  ... Failed to parse final 'x' expression: {e}")
+                # --- END OF MODIFICATION ---
              return f"ERROR: Could not parse final expression '{expr}'"
         # --- END OF MODIFICATION ---
 
