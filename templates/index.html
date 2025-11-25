@@ -139,6 +139,37 @@
             box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); /* Blue glow */
         }
 
+        /* --- Checkbox Wrapper (NEW) --- */
+        .checkbox-wrapper {
+            display: flex;
+            align-items: center;
+            margin-bottom: 1.5rem; /* Standard spacing */
+        }
+
+        .checkbox-wrapper input[type="checkbox"] {
+            width: 1.15em; /* Slightly larger than default */
+            height: 1.15em;
+            cursor: pointer;
+            accent-color: #3b82f6; /* Modern way to tint the checkbox blue */
+            border: 1px solid #d1d5db; /* Fallback border color */
+            border-radius: 0.25rem;
+            transition: box-shadow 0.2s; /* Add focus transition */
+        }
+        
+        .checkbox-wrapper input[type="checkbox"]:focus {
+            /* Add focus ring consistent with textarea */
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+        }
+
+        .checkbox-wrapper label {
+            margin-left: 0.6rem;
+            color: #374151; /* Good text color */
+            font-weight: 500; /* Match radio label weight */
+            cursor: pointer;
+            user-select: none; /* Prevent text selection on click */
+        }
+
         /* --- Submit Button --- */
         button[type="submit"] {
             display: inline-block;
@@ -218,7 +249,15 @@
                 </label>
             </div>
             
-            <textarea name="inputs" rows="8" placeholder="Enter one expression per line, in order...">{{ request.form.inputs }}</textarea><br>
+            <textarea name="inputs" rows="8" placeholder="Enter one expression per line, in order...">{{ request.form.inputs }}</textarea>
+            
+            <!-- START: Added Checkbox Section -->
+            <div class="checkbox-wrapper">
+                <input type="checkbox" id="show_steps" name="show_steps" value="true" {% if request.form.show_steps %}checked{% endif %}>
+                <label for="show_steps">Show steps</label>
+            </div>
+            <!-- END: Added Checkbox Section -->
+            
             <button type="submit">Run Calculator</button>
         </form>
 

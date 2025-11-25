@@ -356,10 +356,33 @@ def find_and_solve_innermost(expr, open_c, close_c, name, log_buffer=None):
     if log_buffer:
         log_buffer.append(f"[DEBUG] find_and_solve_innermost: Found '{full}'. Solving inner: '{inner}'")
 
+    # --- START OF BUG FIX (GLOBAL_STEP) ---
+    # Save the global step value, because the recursive call
+    # with print_steps=False will set it to -1.
+    global GLOBAL_STEP
+    current_step_mode = GLOBAL_STEP
+    # --- END OF BUG FIX ---
+
     # Recursively solve the inner part, indicating this is a recursive call
     solved = solve_expression(inner, print_steps=False, _is_recursive_call=True, log_buffer=log_buffer)
+    
+    # --- START OF BUG FIX (GLOBAL_STEP) ---
+    # Restore the global step value
+    GLOBAL_STEP = current_step_mode
+    # --- END OF BUG FIX ---
+    
     if isinstance(solved, str) and solved.startswith("ERROR"):
         return solved, True  # Propagate errors
+
+    # --- START OF MODIFICATION (Show Calculation Step) ---
+    # We need the global counter to add our new step
+    # global GLOBAL_STEP  <- Already declared above
+    if GLOBAL_STEP >= 0: # Check if steps are enabled
+        GLOBAL_STEP += 1
+        if log_buffer:
+            # Log the specific calculation: e.g., "Solve Parentheses (): 3+4 = 7"
+            log_buffer.append(f"  ({GLOBAL_STEP}) Solve {name}: {inner} = {solved}")
+    # --- END OF MODIFICATION ---
 
     # --- ALGAB PARANDUS ---
     # Muudame lahendatud väärtuse (mis on number) lihtsalt stringiks.
@@ -403,7 +426,14 @@ def find_and_solve_innermost(expr, open_c, close_c, name, log_buffer=None):
 
     # Print the step if enabled
     if GLOBAL_STEP >= 0 and did_change: # Only print if it changed
-        print_step(name, new_expr, log_buffer=log_buffer)
+        # We call print_step WITHOUT incrementing GLOBAL_STEP here,
+        # because the "Solve" step above already incremented it.
+        # We just want to log the *resolution*
+        if log_buffer:
+            log_buffer.append(f"  ... Resolved {name}: {new_expr}")
+        # ---
+        # Original: print_step(name, new_expr, log_buffer=log_buffer)
+        # ---
 
     # --- START OF FIX (Infinite Loop) ---
     return new_expr, did_change
@@ -535,7 +565,7 @@ def solve_expression(expr_str, print_steps=True, _is_recursive_call=False, log_b
     global _CURRENT_VARIABLE_ASSIGNMENTS
 
     # --- [DEBUG] ADDED PRINT ---
-    if log_buffer:
+    if log_buffer and print_steps:
         log_buffer.append(f"[DEBUG] solve_expression called with: '{expr_str}' (Recursive: {_is_recursive_call})")
 
     # --- Sanitize all incoming strings to use ASCII equivalents, force lowercase, and strip invalid chars
@@ -556,7 +586,7 @@ def solve_expression(expr_str, print_steps=True, _is_recursive_call=False, log_b
     # if _is_recursive_call and re.fullmatch(r"\([\-0-9\./]+\)", expr):
     #     pass # Jäta normaliseerimine vahele
     # else:
-    expr = normalize_unary_minus(expr, log_buffer=log_buffer)
+    expr = normalize_unary_minus(expr, log_buffer=log_buffer if print_steps else None)
     # --- LÕPEB PARANDUS ---
 
 
@@ -630,17 +660,24 @@ def solve_expression(expr_str, print_steps=True, _is_recursive_call=False, log_b
         expr = substituted_expr
 
     # After substitution, normalize unary minus again in case substitutions produced new patterns
-    expr = normalize_unary_minus(expr, log_buffer=log_buffer)
+    expr = normalize_unary_minus(expr, log_buffer=log_buffer if print_steps else None)
 
 
-    # Disable step-by-step printing
-    if print_steps and all(ch not in expr for ch in "()[]{}") and not re.search(r"%\s*(?:of\b\s*)?", expr):
-        print_steps = False
-
-    if print_steps:
-        GLOBAL_STEP = 0
-    else:
+    # Disable step-by-step printing if not requested
+    if not print_steps:
         GLOBAL_STEP = -1
+    # Enable step-by-step printing, but only if complex ops exist
+    elif print_steps and all(ch not in expr for ch in "()[]{}") and not re.search(r"%\s*(?:of\b\s*)?", expr):
+        GLOBAL_STEP = -1 # No complex ops, no steps needed
+    # Enable step-by-step printing
+    else:
+        # --- START OF MODIFICATION (Fix) ---
+        # Only set GLOBAL_STEP to 0 if it's not a recursive call.
+        # If it is recursive, we leave GLOBAL_STEP alone.
+        if not _is_recursive_call:
+            GLOBAL_STEP = 0
+        # --- END OF MODIFICATION ---
+
 
     # First, check if it's an equation (after substitution)
     eq = split_top_level_equation(expr)
@@ -648,17 +685,20 @@ def solve_expression(expr_str, print_steps=True, _is_recursive_call=False, log_b
         L, R = eq
         try:
             # Solve left and right sides independently first, indicating recursive calls
-            LS = solve_expression(L, print_steps=False, _is_recursive_call=True, log_buffer=log_buffer)
+            # Pass log_buffer only if steps are requested
+            log_buffer_recursive = log_buffer if print_steps else None
+            
+            LS = solve_expression(L, print_steps=False, _is_recursive_call=True, log_buffer=log_buffer_recursive)
             if isinstance(LS, str) and LS.startswith("ERROR"):
                 return LS # Propagate error
             
-            RS = solve_expression(R, print_steps=False, _is_recursive_call=True, log_buffer=log_buffer)
+            RS = solve_expression(R, print_steps=False, _is_recursive_call=True, log_buffer=log_buffer_recursive)
             if isinstance(RS, str) and RS.startswith("ERROR"):
                 return RS # Propagate error
 
             # Then, use the simplified linear expressions to solve for 'x'
             # This can raise a ValueError if parse_linear fails (e.g., 'x = 1/0')
-            return solve_equation(str(LS), str(RS), log_buffer=log_buffer)
+            return solve_equation(str(LS), str(RS), log_buffer=log_buffer_recursive)
             
         except ValueError as e:
             # Catch errors from parse_linear (via solve_equation)
@@ -672,21 +712,27 @@ def solve_expression(expr_str, print_steps=True, _is_recursive_call=False, log_b
             return f"ERROR: An unexpected error occurred while solving equation: {e}"
 
     # --- No equation, so solve as a single expression ---
-    if print_steps and log_buffer:
+    if GLOBAL_STEP == 0 and log_buffer: # Only print header if steps are enabled
         log_buffer.append("\n--- Start Iterative Bracket/Percentage Resolution ---")
 
+    # --- START OF MODIFICATION (Reversed Precedence) ---
+    # We must solve from the inside out: () -> [] -> {}
     precedence = [
-        ("{", "}", "Curly Braces {}"),
-        ("[", "]", "Square Brackets []"),
         ("(", ")", "Parentheses ()"),
+        ("[", "]", "Square Brackets []"),
+        ("{", "}", "Curly Braces {}"),
     ]
+    # --- END OF MODIFICATION ---
 
     changed = True
     while changed:
         changed = False
         # Try resolving brackets first, in order of precedence
         for o, c, n in precedence:
-            expr, updated = find_and_solve_innermost(expr, o, c, n, log_buffer=log_buffer)
+            # Pass log_buffer only if steps are enabled (GLOBAL_STEP >= 0)
+            log_buffer_steps = log_buffer if GLOBAL_STEP >= 0 else None
+            expr, updated = find_and_solve_innermost(expr, o, c, n, log_buffer=log_buffer_steps)
+            
             if isinstance(expr, str) and expr.startswith("ERROR"):
                 return expr  # Propagate error
             if updated:
@@ -696,7 +742,10 @@ def solve_expression(expr_str, print_steps=True, _is_recursive_call=False, log_b
         # If no brackets were resolved in this pass, try to resolve percentages
         if not changed:
             old_expr = expr
-            expr, updated_percentage = convert_percentages_in_expr(expr, log_buffer=log_buffer)
+            # Pass log_buffer only if steps are enabled (GLOBAL_STEP >= 0)
+            log_buffer_steps = log_buffer if GLOBAL_STEP >= 0 else None
+            expr, updated_percentage = convert_percentages_in_expr(expr, log_buffer=log_buffer_steps)
+            
             if updated_percentage:
                 # print_step is already called inside convert_percentages_in_expr
                 changed = True
@@ -715,16 +764,19 @@ def solve_expression(expr_str, print_steps=True, _is_recursive_call=False, log_b
             # --- END OF FIX ---
             pass # Keep the if block structure
 
-    if print_steps and log_buffer:
+    if GLOBAL_STEP == 0 and log_buffer: # Only print if steps were enabled
         log_buffer.append("--- Finished Bracket/Percentage Resolution ---")
         log_buffer.append("\n--- Final Calculation ---")
+
+    # Pass log_buffer only if steps are enabled (GLOBAL_STEP >= 0)
+    log_buffer_steps = log_buffer if GLOBAL_STEP >= 0 else None
 
     # If 'x' remains after all brackets and substitutions are done,
     if "x" in expr:
         # --- START OF MODIFICATION (Handle Errors) ---
         # Try to parse and rebuild it for a cleaner look.
         try:
-            a, b = parse_linear(expr, log_buffer=log_buffer) # This will use Fractions
+            a, b = parse_linear(expr, log_buffer=log_buffer_steps) # This will use Fractions
             
             # Format 'a' and 'b' based on the output mode
             if RETURN_FRACTION:
@@ -776,7 +828,7 @@ def solve_expression(expr_str, print_steps=True, _is_recursive_call=False, log_b
     # --- START OF MODIFICATION (Handle Errors) ---
     # No 'x', so it's a purely numeric expression
     # calculate_standard_expression now returns a number or an "ERROR:" string
-    numeric = calculate_standard_expression(expr, log_buffer=log_buffer)
+    numeric = calculate_standard_expression(expr, log_buffer=log_buffer_steps)
     
     # If it's an error string, return it directly.
     # Otherwise, it's the valid numeric result.
@@ -788,9 +840,10 @@ def solve_expression(expr_str, print_steps=True, _is_recursive_call=False, log_b
 #               WEB APP INTERFACE FUNCTION (MODIFIED)
 # ============================================================
 
-def run_calculator(mode, expression_lines):
+def run_calculator(mode, expression_lines, show_steps=False):
     """
-    Takes a single mode ('fraction' or 'float') and a list of expression strings.
+    Takes a single mode ('fraction' or 'float'), a list of expression strings,
+    and a boolean 'show_steps'.
     Returns the captured print output for all expressions.
     """
     global RETURN_FRACTION
@@ -890,8 +943,9 @@ def run_calculator(mode, expression_lines):
                         # We add a try...except block here to catch errors from solve_expression
                         # (like ValueErrors from parse_linear)
                         try:
-                            # Anname log_buffer=log_buffer, et näha debug-väljundit ka siin
-                            solved_value = solve_expression(temp_value_expr_str, print_steps=False, _is_recursive_call=True, log_buffer=log_buffer)
+                            # Pass log_buffer only if steps are requested
+                            log_buffer_steps = log_buffer if show_steps else None
+                            solved_value = solve_expression(temp_value_expr_str, print_steps=False, _is_recursive_call=True, log_buffer=log_buffer_steps)
                         except Exception as e:
                             # Catch any unexpected exceptions during assignment solving
                             err_msg = f"ERROR: Invalid assignment for '{var_name}'. Could not solve '{temp_value_expr_str}': {e}"
@@ -945,8 +999,11 @@ def run_calculator(mode, expression_lines):
                     # We have an expression_to_solve
                     log_buffer.append(f"\nProcessing: {expression_to_solve}") # Vana: print
                     
-                    # See kutse annab log_buffer'i edasi solve_expression'ile
-                    result = solve_expression(expression_to_solve, print_steps=True, log_buffer=log_buffer)
+                    # --- START: Modified line ---
+                    # Pass the show_steps boolean to the print_steps argument
+                    # If show_steps is False, solve_expression won't add debug steps
+                    result = solve_expression(expression_to_solve, print_steps=show_steps, log_buffer=log_buffer)
+                    # --- END: Modified line ---
                     
                     log_buffer.append("\n" + "=" * 40) # Vana: print
                     log_buffer.append(f"RESULT: {result}") # Vana: print
@@ -998,6 +1055,10 @@ if __name__ == "__main__":
             mode = "float"
         else:
             mode = "fraction"
+        
+        # --- Ask for steps ---
+        steps_choice = input("Show steps? (y/n): ").strip().lower()
+        show_steps_cli = steps_choice in ['y', 'yes']
 
         # --- Get expression ---
         raw = input("Enter expression: ")
@@ -1011,7 +1072,8 @@ if __name__ == "__main__":
 
         # --- Use the run_calculator function to process the input ---
         # run_calculator tagastab nüüd kogu väljundi stringina
-        output_string = run_calculator(mode, [raw])
+        # Pass the show_steps_cli boolean
+        output_string = run_calculator(mode, [raw], show_steps=show_steps_cli)
         
         # Prindime selle stringi konsooli
         print(output_string)

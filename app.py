@@ -17,14 +17,20 @@ def index():
         # 2. Get the text from the textarea
         text = form_data.get("inputs", "")
         
-        # 3. Split expressions by line (ignoring empty lines)
+        # 3. Check if the "show_steps" checkbox is checked
+        # If it's checked, form_data.get("show_steps") will be "true"
+        # We compare it to "true" to get a boolean (True/False)
+        show_steps = form_data.get("show_steps") == "true"
+        
+        # 4. Split expressions by line (ignoring empty lines)
         expression_lines = [line for line in text.splitlines() if line and line.strip()]
         
-        # 4. Run calculator with the single mode and the list of expressions
+        # 5. Run calculator with the single mode, expressions, and steps flag
         if expression_lines:
-            output = run_calculator(mode, expression_lines)
+            output = run_calculator(mode, expression_lines, show_steps=show_steps)
 
     # Pass the full request.form to template for repopulating fields
+    # This ensures radio buttons and checkboxes remember their state
     return render_template("index.html", output=output, request=request)
 
 if __name__ == "__main__":
