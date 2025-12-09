@@ -4,6 +4,8 @@ from fractions import Fraction
 import io
 import sys
 import math
+import ast
+import operator
 
 # ============================================================
 #                  CUSTOM EXCEPTION
@@ -12,6 +14,50 @@ import math
 class CalculationError(Exception):
     """Custom exception for errors during calculation."""
     pass
+
+# ============================================================
+#                 AST SECURITY LAYER
+# ============================================================
+
+# Whitelist allowed operations. 
+# Any operation NOT in this list (like function calls, imports, attribute access) will fail.
+ALLOWED_OPERATORS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.Pow: operator.pow,
+    ast.Mod: operator.mod,
+    ast.USub: operator.neg,
+    ast.UAdd: operator.pos,
+}
+
+def _safe_eval_ast(node):
+    """
+    Recursively evaluates an AST node if and only if it is a number or 
+    a whitelisted operator.
+    """
+    if isinstance(node, (ast.Constant, ast.Num)): # Handle Python 3.8+ and older
+        return node.n if isinstance(node, ast.Num) else node.value
+        
+    elif isinstance(node, ast.BinOp):
+        op_func = ALLOWED_OPERATORS.get(type(node.op))
+        if op_func:
+            left = _safe_eval_ast(node.left)
+            right = _safe_eval_ast(node.right)
+            # Safety check for massive exponents to prevent CPU freezing (DoS)
+            if op_func is operator.pow:
+                if abs(right) > 100: 
+                    raise CalculationError("Exponent too large")
+            return op_func(left, right)
+            
+    elif isinstance(node, ast.UnaryOp):
+        op_func = ALLOWED_OPERATORS.get(type(node.op))
+        if op_func:
+            return op_func(_safe_eval_ast(node.operand))
+            
+    # If the node is anything else (Call, Attribute, Import, etc.), REJECT IT.
+    raise CalculationError("Security Violation: Unauthorized syntax detected.")
 
 # ============================================================
 #                 PURE HELPER FUNCTIONS
@@ -93,9 +139,9 @@ class Calculator:
         self.show_steps = show_steps
         
         # State
-        self.variables = {}     # Replaces _CURRENT_VARIABLE_ASSIGNMENTS
-        self.step_log = []      # Replaces log_buffer
-        self.step_count = 0     # Replaces GLOBAL_STEP
+        self.variables = {}     
+        self.step_log = []      
+        self.step_count = 0     
 
     def _log_step(self, message):
         """Internal helper to add a message to the step log if enabled."""
@@ -112,20 +158,26 @@ class Calculator:
 
     def _calculate_standard_expression(self, expr):
         """
-        Evaluates a simple numeric expression string.
+        Evaluates a simple numeric expression string using SAFER AST parsing.
         Returns a number (Fraction or float) on success.
         Raises CalculationError on failure.
         """
         expr = expr.replace(" ", "")
 
-        if re.search(r"[^0-9+\-*/.()eE]", expr):
+        # 1. Regex check (First Line of Defense)
+        # We still keep this to reject obviously bad characters early
+        if re.search(r"[^0-9+\-*/.%()eE]", expr):
             expr = self._normalize_unary_minus(expr)
-            if re.search(r"[^0-9+\-*/.()eE]", expr):
+            if re.search(r"[^0-9+\-*/.%()eE]", expr):
                  self._log_step(f"  [Error] Calculation REJECTED (invalid chars): '{expr}'")
                  raise CalculationError(f"Invalid characters in numeric expression '{expr}'")
 
         try:
-            value = eval(expr)
+            # 2. AST Evaluation (The Kill Switch)
+            # Instead of eval(expr), we parse the string into a tree and manually execute it.
+            tree = ast.parse(expr, mode='eval')
+            value = _safe_eval_ast(tree.body)
+
             if self.return_fraction:
                 return Fraction(value).limit_denominator()
             return value
@@ -140,7 +192,10 @@ class Calculator:
                 raise CalculationError("Mismatched or missing brackets")
             else:
                 self._log_step(f"  [Error] Calculation FAILED: Syntax error {e}")
-                raise CalculationError("Invalid syntax in expression (e.g., '5 * / 2')")
+                raise CalculationError("Invalid syntax in expression")
+        except CalculationError as e:
+            # Re-raise our own custom errors (like Security Violation)
+            raise e
         except Exception as e:
             self._log_step(f"  [Error] Calculation FAILED: {e}")
             raise CalculationError(f"An unexpected error occurred during calculation: {e}")
