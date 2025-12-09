@@ -2,296 +2,95 @@
 <html lang="en">
 <head>
     <meta charset="utf-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Big Calculator (Web)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Big Calculator</title>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     
-    <style>
-        /* --- Basic Reset & Body --- */
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background-color: #f9fafb; /* Light gray page background */
-            color: #1f2937; /* Default text color */
-            line-height: 1.6;
-            padding: 2rem; /* Spacing from screen edge */
-        }
-
-        /* --- Main Content Card --- */
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
-            background-color: #ffffff; /* White card background */
-            border-radius: 0.75rem; /* Rounded corners */
-            padding: 2rem 2.5rem; /* Inner spacing */
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
-        }
-
-        /* --- Typography --- */
-        h1 {
-            font-size: 2rem;
-            font-weight: 700;
-            color: #111827;
-            margin-bottom: 0.5rem;
-        }
-
-        h2 {
-            font-size: 1.5rem;
-            font-weight: 600;
-            color: #111827;
-            margin-top: 2.5rem;
-            margin-bottom: 1rem;
-            border-bottom: 1px solid #e5e7eb;
-            padding-bottom: 0.5rem;
-        }
-
-        /* NEW: Section heading style */
-        h3 {
-            font-size: 1.1rem;
-            font-weight: 600;
-            color: #374151;
-            margin-top: 2rem;
-            margin-bottom: 1rem;
-        }
-
-        .hint {
-            color: #6b7280;
-            margin-bottom: 1.5rem;
-            font-size: 0.9rem;
-        }
-
-        .hint code {
-            background-color: #f3f4f6;
-            color: #374151;
-            padding: 0.2em 0.4em;
-            border-radius: 0.25rem;
-            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-            font-size: 0.85em;
-        }
-
-        /* --- Form Elements --- */
-        form {
-            margin-top: 1rem; /* Reduced top margin, h3 will handle it */
-        }
-        
-        /* --- Custom Radio Buttons --- */
-        .mode-toggle {
-            display: flex;
-            gap: 0.75rem; /* Space between buttons */
-            margin-bottom: 1.5rem;
-        }
-        
-        .mode-toggle label {
-            /* Hide the original radio button */
-            position: relative;
-        }
-        
-        .mode-toggle input[type="radio"] {
-            /* Visually hide the radio button */
-            opacity: 0;
-            position: absolute;
-            width: 0;
-            height: 0;
-        }
-        
-        .radio-label-content {
-            /* This is the visible "button" */
-            display: block;
-            padding: 0.5rem 1.25rem;
-            border: 1px solid #d1d5db; /* Gray border */
-            border-radius: 0.5rem;
-            cursor: pointer;
-            font-weight: 500;
-            color: #374151;
-            background-color: #ffffff;
-            transition: all 0.2s ease-in-out;
-        }
-        
-        /* Style for the selected button */
-        .mode-toggle input[type="radio"]:checked + .radio-label-content {
-            background-color: #ebf4ff; /* Light blue background */
-            border-color: #3b82f6; /* Blue border */
-            color: #2563eb; /* Blue text */
-            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); /* Blue glow */
-        }
-        
-        /* Hover state for non-selected buttons */
-        .mode-toggle input[type="radio"]:not(:checked):hover + .radio-label-content {
-            background-color: #f9fafb; /* Very light gray */
-        }
-
-        /* --- Text Area --- */
-        textarea {
-            width: 100%;
-            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-            font-size: 1rem;
-            padding: 0.75rem 1rem;
-            border: 1px solid #d1d5db; /* Gray border */
-            border-radius: 0.5rem; /* Rounded */
-            margin-bottom: 1rem;
-            resize: vertical; /* Allow vertical resize only */
-            transition: border-color 0.2s, box-shadow 0.2s;
-        }
-
-        textarea:focus {
-            outline: none;
-            border-color: #3b82f6; /* Blue border on focus */
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); /* Blue glow */
-        }
-
-        /* --- Checkbox Wrapper --- */
-        .checkbox-wrapper {
-            display: flex;
-            align-items: center;
-            margin-bottom: 1.5rem; /* Standard spacing */
-        }
-
-        .checkbox-wrapper input[type="checkbox"] {
-            width: 1.15em; /* Slightly larger than default */
-            height: 1.15em;
-            cursor: pointer;
-            accent-color: #3b82f6; /* Modern way to tint the checkbox blue */
-            border: 1px solid #d1d5db; /* Fallback border color */
-            border-radius: 0.25rem;
-            transition: box-shadow 0.2s; /* Add focus transition */
-        }
-        
-        .checkbox-wrapper input[type="checkbox"]:focus {
-            /* Add focus ring consistent with textarea */
-            outline: none;
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
-        }
-
-        .checkbox-wrapper label {
-            margin-left: 0.6rem;
-            color: #374151; /* Good text color */
-            font-weight: 500; /* Match radio label weight */
-            cursor: pointer;
-            user-select: none; /* Prevent text selection on click */
-        }
-
-        /* --- Submit Button --- */
-        button[type="submit"] {
-            display: block; /* Changed from inline-block */
-            width: 100%; /* NEW: Make button full-width */
-            font-family: 'Inter', sans-serif;
-            font-size: 1rem;
-            font-weight: 600;
-            color: #ffffff;
-            background-color: #3b82f6; /* Primary blue */
-            border: none;
-            padding: 0.85rem 1.5rem; /* Increased padding */
-            border-radius: 0.5rem;
-            cursor: pointer;
-            transition: background-color 0.2s;
-            margin-top: 1.5rem; /* NEW: Add space above button */
-        }
-
-        button[type="submit"]:hover {
-            background-color: #2563eb; /* Darker blue on hover */
-        }
-
-        /* --- Output Area --- */
-        pre {
-            background-color: #f3f4f6; /* Light gray */
-            border: 1px solid #e5e7eb; /* Subtle border */
-            padding: 1rem;
-            border-radius: 0.5rem;
-            white-space: pre-wrap; /* Keep this */
-            word-wrap: break-word; /* Keep this */
-            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-            font-size: 0.9rem;
-            color: #111827;
-            min-height: 120px; /* NEW: Give it a minimum height */
-        }
-        
-        /* NEW: Style for the output placeholder */
-        pre.output-placeholder {
-            color: #6b7280; /* Use hint color */
-            font-style: italic;
-            /* Center the text (optional, but nice for a placeholder) */
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        /* --- Responsive Adjustments --- */
-        @media (max-width: 640px) {
-            body {
-                padding: 1rem;
-            }
-            .container {
-                padding: 1.5rem;
-            }
-            h1 {
-                font-size: 1.75rem;
-            }
-            h2 {
-                font-size: 1.25rem;
-            }
-            h3 {
-                font-size: 1rem; /* Adjust h3 for mobile */
-            }
-            /* Stack radio buttons on mobile */
-            .mode-toggle {
-                flex-direction: column;
-                align-items: stretch;
-            }
-            .radio-label-content {
-                text-align: center;
-            }
-        }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <div class="container">
-        <h1>Big Calculator (Web)</h1>
-        <p class="hint">
-          Select your output mode and enter expressions, one per line. You can also assign variables.<br>
-          Example 1 (simple): <code>(1/2) + (1/4)</code><br>
-          Example 2 (variables): <code>a=5; b=3; a+b</code>
-        </p>
+    <button id="theme-toggle" class="icon-btn" aria-label="Toggle Dark Mode">
+        <svg class="sun-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+        <svg class="moon-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+    </button>
 
-        <form method="POST">
-            <h3>1. Configuration</h3>
-            
-            <div class="mode-toggle">
-                <label>
-                    <input type="radio" name="output_mode" value="fraction" {% if request.form.output_mode != 'float' %}checked{% endif %}>
-                    <span class="radio-label-content">Fraction</span>
-                </label>
-                <label>
-                    <input type="radio" name="output_mode" value="float" {% if request.form.output_mode == 'float' %}checked{% endif %}>
-                    <span class="radio-label-content">Float</span>
-                </label>
-            </div>
-            
-            <div class="checkbox-wrapper">
-                <input type="checkbox" id="show_steps" name="show_steps" value="true" {% if request.form.show_steps %}checked{% endif %}>
-                <label for="show_steps">Show steps</label>
-            </div>
-            
-            <h3>2. Input Expressions</h3>
-            
-            <textarea name="inputs" rows="8" placeholder="Enter one expression per line, in order...">{{ request.form.inputs }}</textarea>
-            
-            <button type="submit">Run Calculator</button>
-        </form>
+    <div class="main-wrapper">
+        <div class="container">
+            <header>
+                <h1>Big Calculator</h1>
+                <p class="hint">Enter math or assignments (e.g., <code>a=5; a+2</code>).</p>
+            </header>
 
-        <h2>Output</h2>
-        {% if output %}
-            <pre>{{ output }}</pre>
-        {% else %}
-            <pre class="output-placeholder">Click "Run Calculator" to see your results.</pre>
-        {% endif %}
+            <form id="calc-form">
+                <div class="settings-bar">
+                    <div class="mode-toggle">
+                        <label>
+                            <input type="radio" name="output_mode" value="fraction" checked>
+                            <span class="radio-label-content">Fraction</span>
+                        </label>
+                        <label>
+                            <input type="radio" name="output_mode" value="float">
+                            <span class="radio-label-content">Float</span>
+                        </label>
+                    </div>
+                    
+                    <div class="checkbox-wrapper">
+                        <input type="checkbox" id="show_steps" name="show_steps" value="true">
+                        <label for="show_steps">Show steps</label>
+                    </div>
+                </div>
+                
+                <div class="input-section">
+                    <textarea id="inputs-textarea" name="inputs" rows="4" placeholder="Type here..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+                </div>
+
+                <div class="virtual-keypad">
+                    <button type="button" class="k-btn var" data-val="x">x</button>
+                    <button type="button" class="k-btn var" data-val="y">y</button>
+                    <button type="button" class="k-btn var" data-val="a">a</button>
+                    <button type="button" class="k-btn var" data-val="π" style="font-style: normal;">π</button>
+                    <button type="button" class="k-btn secondary" data-val="(">(</button>
+                    <button type="button" class="k-btn secondary" data-val=")">)</button>
+
+                    <button type="button" class="k-btn" data-val="7">7</button>
+                    <button type="button" class="k-btn" data-val="8">8</button>
+                    <button type="button" class="k-btn" data-val="9">9</button>
+                    <button type="button" class="k-btn op" data-val="/">÷</button>
+                    <button type="button" class="k-btn op" data-val="^">^</button>
+                    <button type="button" class="k-btn secondary" data-val=";">;</button>
+
+                    <button type="button" class="k-btn" data-val="4">4</button>
+                    <button type="button" class="k-btn" data-val="5">5</button>
+                    <button type="button" class="k-btn" data-val="6">6</button>
+                    <button type="button" class="k-btn op" data-val="*">×</button>
+                    <button type="button" class="k-btn op" data-val="%">%</button>
+                    <button type="button" class="k-btn danger" id="btn-clear">AC</button>
+
+                    <button type="button" class="k-btn" data-val="1">1</button>
+                    <button type="button" class="k-btn" data-val="2">2</button>
+                    <button type="button" class="k-btn" data-val="3">3</button>
+                    <button type="button" class="k-btn op" data-val="-">−</button>
+                    <button type="button" class="k-btn op" data-val="=">=</button>
+                    <button type="button" class="k-btn danger" id="btn-backspace">⌫</button>
+
+                    <button type="button" class="k-btn" data-val="0">0</button>
+                    <button type="button" class="k-btn" data-val=".">.</button>
+                    <button type="button" class="k-btn action" id="btn-newline">↵</button>
+                    <button type="button" class="k-btn op" data-val="+">+</button>
+                    <button type="submit" id="submit-button" class="k-btn primary span-2">RUN</button>
+                </div>
+            </form>
+
+            <div class="output-section">
+                <h2>Results</h2>
+                <pre id="output-pre" class="output-placeholder">Ready to calculate.</pre>
+            </div>
+        </div>
     </div>
+
+    <script src="{{ url_for('static', filename='app.js') }}" defer></script>
 </body>
 </html>

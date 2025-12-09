@@ -1,0 +1,246 @@
+/* --- CSS Variables (Theming) --- */
+:root {
+    /* Light Theme (Default) */
+    --bg-page: #f3f4f6;
+    --bg-card: #ffffff;
+    --text-main: #1f2937;
+    --text-muted: #6b7280;
+    --border-color: #e5e7eb;
+    
+    --primary: #3b82f6;
+    --primary-hover: #2563eb;
+    --primary-light: #ebf4ff;
+    
+    --btn-bg: #f9fafb;
+    --btn-border: #d1d5db;
+    --btn-text: #374151;
+    --btn-active: #e5e7eb;
+    
+    --keypad-op-bg: #e0e7ff;
+    --keypad-op-text: #3730a3;
+    
+    --code-bg: #111827;
+    --code-text: #f3f4f6;
+}
+
+[data-theme="dark"] {
+    --bg-page: #111827;
+    --bg-card: #1f2937;
+    --text-main: #f9fafb;
+    --text-muted: #9ca3af;
+    --border-color: #374151;
+    
+    --primary: #60a5fa;
+    --primary-hover: #3b82f6;
+    --primary-light: #1e3a8a;
+    
+    --btn-bg: #374151;
+    --btn-border: #4b5563;
+    --btn-text: #f3f4f6;
+    --btn-active: #4b5563;
+    
+    --keypad-op-bg: #312e81;
+    --keypad-op-text: #c7d2fe;
+    
+    --code-bg: #000000;
+    --code-text: #10b981;
+}
+
+/* --- Basic Reset & Body --- */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--bg-page);
+    color: var(--text-main);
+    line-height: 1.5;
+    transition: background-color 0.3s, color 0.3s;
+}
+
+/* --- Layout --- */
+.main-wrapper {
+    display: flex;
+    justify-content: center;
+    padding: 1rem;
+    min-height: 100vh;
+}
+
+.container {
+    width: 100%;
+    max-width: 800px; /* Slightly narrower for better focus */
+    background-color: var(--bg-card);
+    border-radius: 1rem;
+    padding: 1.5rem;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+/* --- Header --- */
+h1 { font-size: 1.5rem; font-weight: 700; color: var(--text-main); }
+.hint { color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem; }
+.hint code { background: var(--btn-bg); padding: 0.1em 0.3em; border-radius: 4px; border: 1px solid var(--border-color); }
+
+/* --- Theme Toggle --- */
+#theme-toggle {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0.5rem;
+    border-radius: 50%;
+}
+#theme-toggle:hover { background-color: var(--btn-bg); color: var(--text-main); }
+[data-theme="dark"] .sun-icon { display: block; }
+[data-theme="dark"] .moon-icon { display: none; }
+[data-theme="light"] .sun-icon { display: none; }
+[data-theme="light"] .moon-icon { display: block; }
+
+/* --- Settings Bar --- */
+.settings-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+/* Radio Buttons */
+.mode-toggle { display: flex; gap: 0.5rem; background: var(--bg-page); padding: 0.25rem; border-radius: 0.5rem; }
+.mode-toggle input { display: none; }
+.radio-label-content {
+    padding: 0.4rem 1rem;
+    border-radius: 0.35rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: all 0.2s;
+}
+.mode-toggle input:checked + .radio-label-content {
+    background-color: var(--bg-card);
+    color: var(--primary);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+/* Checkbox */
+.checkbox-wrapper { display: flex; align-items: center; gap: 0.5rem; color: var(--text-main); font-size: 0.9rem; }
+.checkbox-wrapper input { accent-color: var(--primary); width: 1.1em; height: 1.1em; }
+
+/* --- Textarea --- */
+textarea {
+    width: 100%;
+    font-family: 'JetBrains Mono', monospace; /* Monospace for math is better */
+    font-size: 1.1rem;
+    padding: 1rem;
+    background-color: var(--bg-page);
+    color: var(--text-main);
+    border: 2px solid var(--border-color);
+    border-radius: 0.75rem;
+    resize: none; /* Layout handles size */
+    outline: none;
+    transition: border-color 0.2s;
+}
+textarea:focus { border-color: var(--primary); }
+
+/* --- VIRTUAL KEYPAD (The Star of the Show) --- */
+.virtual-keypad {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr); /* 6 columns */
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.k-btn {
+    appearance: none;
+    border: 1px solid var(--btn-border);
+    background-color: var(--btn-bg);
+    color: var(--btn-text);
+    font-family: 'Inter', sans-serif;
+    font-size: 1.1rem;
+    font-weight: 500;
+    padding: 0.8rem 0;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    user-select: none;
+    transition: transform 0.1s, background-color 0.1s;
+    touch-action: manipulation; /* Improves touch response */
+}
+
+.k-btn:active { transform: translateY(2px); background-color: var(--btn-active); }
+
+/* Keypad Colors */
+.k-btn.op { background-color: var(--keypad-op-bg); color: var(--keypad-op-text); border-color: transparent; font-weight: 700; }
+.k-btn.var { font-family: 'JetBrains Mono', monospace; font-style: italic; color: var(--text-muted); }
+.k-btn.secondary { color: var(--text-muted); }
+.k-btn.danger { color: #ef4444; background-color: #fee2e2; border-color: transparent; }
+[data-theme="dark"] .k-btn.danger { background-color: #7f1d1d; color: #fca5a5; }
+
+.k-btn.primary {
+    background-color: var(--primary);
+    color: #fff;
+    border: none;
+    font-weight: 700;
+}
+.k-btn.primary:hover { background-color: var(--primary-hover); }
+.k-btn.span-2 { grid-column: span 2; }
+
+/* --- Output --- */
+h2 { font-size: 1.1rem; color: var(--text-muted); border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; margin-bottom: 0.5rem; }
+pre {
+    background-color: var(--code-bg);
+    color: var(--code-text);
+    padding: 1rem;
+    border-radius: 0.75rem;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.95rem;
+    min-height: 100px;
+    border: 1px solid var(--border-color);
+}
+.output-placeholder { color: #6b7280; font-style: italic; text-align: center; display: flex; align-items: center; justify-content: center; }
+
+/* --- MOBILE OPTIMIZATIONS --- */
+@media (max-width: 640px) {
+    body { padding: 0; }
+    .main-wrapper { align-items: flex-start; } /* Align to top */
+    
+    .container {
+        height: 100vh;
+        max-width: none;
+        border-radius: 0;
+        padding: 1rem;
+        box-shadow: none;
+        display: flex;
+        flex-direction: column;
+    }
+
+    header h1 { font-size: 1.25rem; }
+    header .hint { display: none; /* Save space on mobile */ }
+
+    /* Flex grow output to fill space, push keypad to bottom */
+    .output-section { flex-grow: 1; overflow-y: auto; margin-bottom: 1rem; order: 2;}
+    
+    /* Make the form stick to bottom */
+    form {
+        margin-top: auto;
+        order: 3; /* Form at bottom */
+        padding-top: 1rem;
+        border-top: 1px solid var(--border-color);
+    }
+    
+    /* Move settings to top of form */
+    .settings-bar { justify-content: space-between; margin-bottom: 0.5rem; }
+    
+    /* Input area smaller on mobile to fit keypad */
+    #inputs-textarea { height: 80px; font-size: 1.25rem; }
+
+    /* Keypad Adjustments for thumbs */
+    .k-btn { padding: 1rem 0; font-size: 1.25rem; }
+}
