@@ -21,7 +21,7 @@
         <div class="container">
             <header>
                 <h1>Big Calculator</h1>
-                <p class="hint">Enter math or assignments (e.g., <code>a=5; a+2</code>).</p>
+                <p class="hint">Enter math or assignments (e.g., <code>a=5; sin(a)</code>).</p>
             </header>
 
             <form id="calc-form">
@@ -37,9 +37,12 @@
                         </label>
                     </div>
                     
-                    <div class="checkbox-wrapper">
-                        <input type="checkbox" id="show_steps" name="show_steps" value="true">
-                        <label for="show_steps">Show steps</label>
+                    <div class="right-settings">
+                        <div class="checkbox-wrapper">
+                            <input type="checkbox" id="show_steps" name="show_steps" value="true">
+                            <label for="show_steps">Show steps</label>
+                        </div>
+                        <button type="button" id="btn-clear-history" class="text-btn">Clear History</button>
                     </div>
                 </div>
                 
@@ -48,37 +51,45 @@
                 </div>
 
                 <div class="virtual-keypad">
+                    <button type="button" class="k-btn secondary span-3" id="btn-left">←</button>
+                    <button type="button" class="k-btn secondary span-3" id="btn-right">→</button>
+
+                    <button type="button" class="k-btn fn" data-val="sin(">sin</button>
+                    <button type="button" class="k-btn fn" data-val="cos(">cos</button>
+                    <button type="button" class="k-btn fn" data-val="sqrt(">√</button>
+                    <button type="button" class="k-btn fn" data-val="log(">log</button>
+                    <button type="button" class="k-btn secondary" data-val="(">(</button>
+                    <button type="button" class="k-btn secondary" data-val=")">)</button>
+
                     <button type="button" class="k-btn var" data-val="x">x</button>
                     <button type="button" class="k-btn var" data-val="y">y</button>
                     <button type="button" class="k-btn var" data-val="a">a</button>
                     <button type="button" class="k-btn var" data-val="π" style="font-style: normal;">π</button>
-                    <button type="button" class="k-btn secondary" data-val="(">(</button>
-                    <button type="button" class="k-btn secondary" data-val=")">)</button>
+                    <button type="button" class="k-btn op" data-val="^">^</button>
+                    <button type="button" class="k-btn secondary" data-val=";">;</button>
 
                     <button type="button" class="k-btn" data-val="7">7</button>
                     <button type="button" class="k-btn" data-val="8">8</button>
                     <button type="button" class="k-btn" data-val="9">9</button>
                     <button type="button" class="k-btn op" data-val="/">÷</button>
-                    <button type="button" class="k-btn op" data-val="^">^</button>
-                    <button type="button" class="k-btn secondary" data-val=";">;</button>
+                    <button type="button" class="k-btn op" data-val="%">%</button>
+                    <button type="button" class="k-btn danger" id="btn-clear">AC</button>
 
                     <button type="button" class="k-btn" data-val="4">4</button>
                     <button type="button" class="k-btn" data-val="5">5</button>
                     <button type="button" class="k-btn" data-val="6">6</button>
                     <button type="button" class="k-btn op" data-val="*">×</button>
-                    <button type="button" class="k-btn op" data-val="%">%</button>
-                    <button type="button" class="k-btn danger" id="btn-clear">AC</button>
+                    <button type="button" class="k-btn op" data-val="=">=</button>
+                    <button type="button" class="k-btn danger" id="btn-backspace">⌫</button>
 
                     <button type="button" class="k-btn" data-val="1">1</button>
                     <button type="button" class="k-btn" data-val="2">2</button>
                     <button type="button" class="k-btn" data-val="3">3</button>
                     <button type="button" class="k-btn op" data-val="-">−</button>
-                    <button type="button" class="k-btn op" data-val="=">=</button>
-                    <button type="button" class="k-btn danger" id="btn-backspace">⌫</button>
+                    <button type="button" class="k-btn action" id="btn-newline" style="grid-column: span 2;">↵ Enter</button>
 
-                    <button type="button" class="k-btn" data-val="0">0</button>
+                    <button type="button" class="k-btn" data-val="0" style="grid-column: span 2;">0</button>
                     <button type="button" class="k-btn" data-val=".">.</button>
-                    <button type="button" class="k-btn action" id="btn-newline">↵</button>
                     <button type="button" class="k-btn op" data-val="+">+</button>
                     <button type="submit" id="submit-button" class="k-btn primary span-2">RUN</button>
                 </div>

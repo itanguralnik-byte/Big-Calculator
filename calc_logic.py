@@ -8,6 +8,13 @@ import ast
 import operator
 
 # ============================================================
+#                  CONFIGURATION
+# ============================================================
+
+# Maximum recursion depth to prevent StackOverflow/Crash on deep nesting
+MAX_RECURSION_DEPTH = 50 
+
+# ============================================================
 #                  CUSTOM EXCEPTION
 # ============================================================
 
@@ -20,7 +27,6 @@ class CalculationError(Exception):
 # ============================================================
 
 # Whitelist allowed operations. 
-# Any operation NOT in this list (like function calls, imports, attribute access) will fail.
 ALLOWED_OPERATORS = {
     ast.Add: operator.add,
     ast.Sub: operator.sub,
@@ -32,10 +38,40 @@ ALLOWED_OPERATORS = {
     ast.UAdd: operator.pos,
 }
 
+# Whitelist allowed functions (Scientific Math)
+WHITELISTED_FUNCTIONS = {
+    # Basic
+    "abs": abs,
+    "round": round,
+    "sqrt": math.sqrt,
+    "cbrt": math.cbrt if hasattr(math, "cbrt") else lambda x: x**(1/3),
+    "exp": math.exp,
+    "ln": math.log,         # Natural log
+    "log": math.log10,      # Base-10 log by default (user expectation)
+    "log10": math.log10,
+    "log2": math.log2,
+    "factorial": math.factorial,
+    
+    # Trigonometry (Radians)
+    "sin": math.sin,
+    "cos": math.cos,
+    "tan": math.tan,
+    "asin": math.asin,
+    "acos": math.acos,
+    "atan": math.atan,
+    "sinh": math.sinh,
+    "cosh": math.cosh,
+    "tanh": math.tanh,
+    
+    # Constants/Misc
+    "degrees": math.degrees,
+    "radians": math.radians,
+}
+
 def _safe_eval_ast(node):
     """
-    Recursively evaluates an AST node if and only if it is a number or 
-    a whitelisted operator.
+    Recursively evaluates an AST node if and only if it is a number,
+    a whitelisted operator, or a whitelisted function call.
     """
     if isinstance(node, (ast.Constant, ast.Num)): # Handle Python 3.8+ and older
         return node.n if isinstance(node, ast.Num) else node.value
@@ -45,7 +81,7 @@ def _safe_eval_ast(node):
         if op_func:
             left = _safe_eval_ast(node.left)
             right = _safe_eval_ast(node.right)
-            # Safety check for massive exponents to prevent CPU freezing (DoS)
+            # Safety check for massive exponents
             if op_func is operator.pow:
                 if abs(right) > 100: 
                     raise CalculationError("Exponent too large")
@@ -55,16 +91,32 @@ def _safe_eval_ast(node):
         op_func = ALLOWED_OPERATORS.get(type(node.op))
         if op_func:
             return op_func(_safe_eval_ast(node.operand))
+
+    elif isinstance(node, ast.Call):
+        # Handle function calls like sin(30) or sqrt(100)
+        if isinstance(node.func, ast.Name):
+            func_name = node.func.id
+            if func_name in WHITELISTED_FUNCTIONS:
+                # Recursively evaluate all arguments
+                args = [_safe_eval_ast(arg) for arg in node.args]
+                try:
+                    return WHITELISTED_FUNCTIONS[func_name](*args)
+                except ValueError as ve:
+                    raise CalculationError(f"Math Domain Error in '{func_name}': {ve}")
+                except TypeError as te:
+                    raise CalculationError(f"Invalid arguments for '{func_name}': {te}")
+            else:
+                raise CalculationError(f"Function '{func_name}' is not allowed.")
             
-    # If the node is anything else (Call, Attribute, Import, etc.), REJECT IT.
+    # If the node is anything else (Attribute, Import, ListComps, etc.), REJECT IT.
     raise CalculationError("Security Violation: Unauthorized syntax detected.")
 
 # ============================================================
 #                 PURE HELPER FUNCTIONS
 # ============================================================
 
-# Compile regex for efficiency
-DISALLOWED_CHARS_REGEX = re.compile(r"[^a-z0-9+\-*/%()[\]{}=;._\s]")
+# Compile regex for efficiency (Added comma for func args)
+DISALLOWED_CHARS_REGEX = re.compile(r"[^a-z0-9+\-*/%()[\]{}=;._\s,]") 
 
 def sanitize_input(expr_str):
     """
@@ -130,8 +182,6 @@ def split_top_level_equation(expr):
 class Calculator:
     """
     Encapsulates all logic and state for a single calculation run.
-    This object is NOT reusable for different lines; a new one
-    should be created for each full input line.
     """
     def __init__(self, mode, show_steps):
         # Configuration
@@ -159,27 +209,24 @@ class Calculator:
     def _calculate_standard_expression(self, expr):
         """
         Evaluates a simple numeric expression string using SAFER AST parsing.
-        Returns a number (Fraction or float) on success.
-        Raises CalculationError on failure.
         """
         expr = expr.replace(" ", "")
 
-        # 1. Regex check (First Line of Defense)
-        # We still keep this to reject obviously bad characters early
-        if re.search(r"[^0-9+\-*/.%()eE]", expr):
+        if re.search(r"[^a-z0-9+\-*/.%()eE,]", expr):
             expr = self._normalize_unary_minus(expr)
-            if re.search(r"[^0-9+\-*/.%()eE]", expr):
+            if re.search(r"[^a-z0-9+\-*/.%()eE,]", expr):
                  self._log_step(f"  [Error] Calculation REJECTED (invalid chars): '{expr}'")
                  raise CalculationError(f"Invalid characters in numeric expression '{expr}'")
 
         try:
-            # 2. AST Evaluation (The Kill Switch)
-            # Instead of eval(expr), we parse the string into a tree and manually execute it.
             tree = ast.parse(expr, mode='eval')
             value = _safe_eval_ast(tree.body)
 
             if self.return_fraction:
-                return Fraction(value).limit_denominator()
+                try:
+                    return Fraction(value).limit_denominator()
+                except (ValueError, OverflowError):
+                    return value
             return value
 
         except ZeroDivisionError:
@@ -194,7 +241,6 @@ class Calculator:
                 self._log_step(f"  [Error] Calculation FAILED: Syntax error {e}")
                 raise CalculationError("Invalid syntax in expression")
         except CalculationError as e:
-            # Re-raise our own custom errors (like Security Violation)
             raise e
         except Exception as e:
             self._log_step(f"  [Error] Calculation FAILED: {e}")
@@ -216,8 +262,9 @@ class Calculator:
             return new_expr, True
         return new_expr, False
 
-    def _find_and_solve_innermost(self, expr, open_c, close_c, name):
+    def _find_and_solve_innermost(self, expr, open_c, close_c, name, depth):
         """Finds and solves the first innermost bracket pair."""
+        
         open_re = re.escape(open_c)
         close_re = re.escape(close_c)
         pattern = rf"{open_re}([^{open_re}{close_re}]+?){close_re}"
@@ -227,32 +274,46 @@ class Calculator:
             return expr, False
 
         inner, full = m.group(1), m.group(0)
+        start_idx, end_idx = m.span()
+
+        # --- IMPORTANT FIX: Check if this is a function call (e.g. sin(...)) ---
+        is_func_call = False
+        if start_idx > 0:
+            preceding_char = expr[start_idx - 1]
+            if re.match(r"[a-z0-9_]", preceding_char):
+                is_func_call = True
 
         # Save and restore step count mode
         current_step_mode = self.step_count
         
-        # Recursively solve the inner part, disabling steps for the sub-problem
-        solved = self._solve_expression(inner, print_steps=False, _is_recursive_call=True)
+        # Recursively solve the inner part
+        solved = self._solve_expression(
+            inner, 
+            print_steps=False, 
+            _is_recursive_call=True, 
+            depth=depth + 1
+        )
         
         self.step_count = current_step_mode
         
-        if self.step_count >= 0:
+        if str(solved) != inner and self.step_count >= 0:
             self.step_count += 1
             self._log_step(f"Step {self.step_count}: Solved {name}: {inner} -> {solved}")
 
         solved_str = str(solved)
-        start_idx, end_idx = m.span()
-        need_paren = False
-
-        if solved_str.startswith("-"):
-            need_paren = True
-        if end_idx < len(expr) and expr[end_idx:end_idx+2] == "**":
-            need_paren = True
         
-        try:
-            float(solved_str) 
-        except ValueError:
-            need_paren = True 
+        need_paren = False
+        if is_func_call:
+            need_paren = True # Always keep parens for functions like sin(0)
+        elif solved_str.startswith("-"):
+            need_paren = True
+        elif end_idx < len(expr) and expr[end_idx:end_idx+2] == "**":
+            need_paren = True
+        else:
+            try:
+                float(solved_str) 
+            except ValueError:
+                need_paren = True 
 
         replacement = f"({solved_str})" if need_paren else solved_str
         new_expr = expr[:start_idx] + replacement + expr[end_idx:]
@@ -346,19 +407,20 @@ class Calculator:
 
     def _substitute_constants(self, expr):
         """Substitutes constants like pi with their numeric value."""
-        # Use a high precision string representation for PI
         return re.sub(r"\bpi\b", str(math.pi), expr)
 
-    def _solve_expression(self, expr_str, print_steps=True, _is_recursive_call=False):
+    def _solve_expression(self, expr_str, print_steps=True, _is_recursive_call=False, depth=0):
         """
         Main function to solve a mathematical expression or equation.
         """
+        if depth > MAX_RECURSION_DEPTH:
+            raise CalculationError("Expression too complex: maximum recursion depth exceeded.")
+
         expr_str = sanitize_input(expr_str)
         expr = convert_mixed_numbers(expr_str).replace(" ", "")
         expr = self._normalize_unary_minus(expr)
 
         if not _is_recursive_call:
-            # Substitute Constants (like pi) BEFORE variables
             expr = self._substitute_constants(expr)
             expr = self._substitute_variables(expr)
             expr = self._normalize_unary_minus(expr) 
@@ -373,8 +435,8 @@ class Calculator:
         eq = split_top_level_equation(expr)
         if eq is not None:
             L, R = eq
-            LS = self._solve_expression(L, print_steps=False, _is_recursive_call=True)
-            RS = self._solve_expression(R, print_steps=False, _is_recursive_call=True)
+            LS = self._solve_expression(L, print_steps=False, _is_recursive_call=True, depth=depth + 1)
+            RS = self._solve_expression(R, print_steps=False, _is_recursive_call=True, depth=depth + 1)
             return self._solve_equation(str(LS), str(RS))
 
         precedence = [
@@ -387,7 +449,7 @@ class Calculator:
         while changed:
             changed = False
             for o, c, n in precedence:
-                expr, updated = self._find_and_solve_innermost(expr, o, c, n)
+                expr, updated = self._find_and_solve_innermost(expr, o, c, n, depth)
                 if updated:
                     changed = True
                     break
@@ -396,24 +458,27 @@ class Calculator:
                 if updated_percentage:
                     changed = True
 
-        if "x" in expr:
-            a, b = self._parse_linear(expr)
-            
-            if not self.return_fraction:
-                a, b = float(a), float(b)
+        if "x" in expr and "sin" not in expr and "cos" not in expr:
+            try:
+                a, b = self._parse_linear(expr)
+                
+                if not self.return_fraction:
+                    a, b = float(a), float(b)
 
-            ax = f"{a}x" if a != 0 else ""
-            if a == 1: ax = "x"
-            elif a == -1: ax = "-x"
-            
-            bs = ""
-            if b > 0: bs = f"+{b}"
-            elif b < 0: bs = f"{b}"
-            
-            if ax and bs: return f"{ax}{bs}"
-            elif ax: return ax
-            elif b != 0: return str(b)
-            else: return "0"
+                ax = f"{a}x" if a != 0 else ""
+                if a == 1: ax = "x"
+                elif a == -1: ax = "-x"
+                
+                bs = ""
+                if b > 0: bs = f"+{b}"
+                elif b < 0: bs = f"{b}"
+                
+                if ax and bs: return f"{ax}{bs}"
+                elif ax: return ax
+                elif b != 0: return str(b)
+                else: return "0"
+            except:
+                pass
 
         return self._calculate_standard_expression(expr)
 
@@ -443,7 +508,8 @@ class Calculator:
                 solved_value = self._solve_expression(
                     value_expr_str, 
                     print_steps=False, 
-                    _is_recursive_call=True 
+                    _is_recursive_call=False,
+                    depth=0
                 )
                 
                 if isinstance(solved_value, str) and "x" in solved_value and var_name == "x":
@@ -476,13 +542,15 @@ class Calculator:
         elif not parts:
             return ""
         else:
-            # Main calculation
-            result = self._solve_expression(expression_to_solve, print_steps=self.show_steps)
+            result = self._solve_expression(
+                expression_to_solve, 
+                print_steps=self.show_steps,
+                depth=0
+            )
             
-            # Prepend steps if they exist
             if self.show_steps and self.step_log:
                 output_log.extend(self.step_log)
-                output_log.append("") # Spacer
+                output_log.append("") 
             
             output_log.append(f"Result: {result}")
 
@@ -499,21 +567,18 @@ def run_calculator(mode, expression_lines, show_steps=False):
     
     full_output_log = []
     
-    # Initialize the calculator ONCE before the loop starts.
     calc = Calculator(mode, show_steps)
     
     valid_lines_count = 0
     for line in expression_lines:
         if not line.strip(): continue
         
-        # Manually clear the step log for the new line so old steps don't repeat
         calc.step_log = []
         
         if valid_lines_count > 0:
             full_output_log.append("\n" + ("-" * 10) + "\n") 
 
         try:
-            # Reuse the same 'calc' instance
             line_result_str = calc.process_input_line(line)
             
             if line_result_str:
@@ -527,10 +592,6 @@ def run_calculator(mode, expression_lines, show_steps=False):
             
     return "\n".join(full_output_log)
 
-
-# ============================================================
-#                 COMMAND LINE INTERFACE
-# ============================================================
 
 if __name__ == "__main__":
     print("Clean Calculator CLI")
