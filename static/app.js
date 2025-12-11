@@ -2,46 +2,60 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // --- Elements ---
     const calcForm = document.getElementById("calc-form");
-    const outputPre = document.getElementById("output-pre");
+    const outputDiv = document.getElementById("output-div"); 
     const submitButton = document.getElementById("submit-button");
-    const textarea = document.getElementById("inputs-textarea");
+    const textareaRaw = document.getElementById("inputs-textarea");
     const themeToggle = document.getElementById("theme-toggle");
     const clearHistoryBtn = document.getElementById("btn-clear-history");
     
     // --- Constants ---
     const STORAGE_KEY = "big_calc_session";
 
-    // --- 0. Session History ---
+    // --- 0. Initialize CodeMirror ---
+    // This replaces the raw textarea with the code editor
+    const editor = CodeMirror.fromTextArea(textareaRaw, {
+        mode: "python", // Python mode matches SymPy/Calculator syntax
+        theme: "default", // We override colors in CSS via variables
+        lineNumbers: true,
+        lineWrapping: true,
+        matchBrackets: true,
+        styleActiveLine: true,
+        viewportMargin: Infinity // Auto-resize height logic if needed
+    });
+
+    // --- 1. Session History ---
     function loadSession() {
         const saved = localStorage.getItem(STORAGE_KEY);
         if (saved !== null) {
-            textarea.value = saved;
+            editor.setValue(saved);
         }
     }
 
     function saveSession() {
-        localStorage.setItem(STORAGE_KEY, textarea.value);
+        localStorage.setItem(STORAGE_KEY, editor.getValue());
     }
 
     // Load history immediately
     loadSession();
 
-    // Save on physical typing
-    textarea.addEventListener("input", saveSession);
+    // Save on any change in the editor
+    editor.on("change", saveSession);
 
     // Clear History Button Logic
     if (clearHistoryBtn) {
         clearHistoryBtn.addEventListener("click", () => {
-            if (confirm("Are you sure you want to clear your calculation history?")) {
-                textarea.value = "";
-                outputPre.textContent = "Ready to calculate.";
-                outputPre.classList.add("output-placeholder");
+            // IMPORTANT: Use custom modal UI instead of confirm() in production
+            if (window.confirm("Are you sure you want to clear your calculation history?")) {
+                editor.setValue("");
+                editor.focus();
+                outputDiv.textContent = "Ready to calculate.";
+                outputDiv.classList.add("output-placeholder");
                 localStorage.removeItem(STORAGE_KEY);
             }
         });
     }
 
-    // --- 1. Dark Mode Logic ---
+    // --- 2. Dark Mode Logic ---
     let isDark = localStorage.getItem("theme") === "dark";
     updateTheme();
 
@@ -55,14 +69,14 @@ document.addEventListener("DOMContentLoaded", () => {
         document.documentElement.setAttribute("data-theme", isDark ? "dark" : "light");
     }
 
-    // --- 2. Virtual Keypad Logic ---
+    // --- 3. Virtual Keypad Logic (Refactored for CodeMirror) ---
     const keys = document.querySelectorAll(".k-btn");
     
-    // Detect if we are on a touch device to optimize keyboard handling
+    // Detect touch device
     const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
     if (isTouchDevice) {
-        textarea.setAttribute("readonly", "readonly"); 
+        // Optional: Can add specific touch handling here if needed
     }
 
     keys.forEach(btn => {
@@ -79,62 +93,55 @@ document.addEventListener("DOMContentLoaded", () => {
         const val = btn.dataset.val;
         const id = btn.id;
         
-        let startPos = textarea.selectionStart;
-        let endPos = textarea.selectionEnd;
-        let text = textarea.value;
-
-        textarea.focus();
+        editor.focus();
+        
+        // Get current cursor position
+        const doc = editor.getDoc();
+        const cursor = doc.getCursor(); 
 
         if (id === "btn-clear") {
-            textarea.value = "";
-        } else if (id === "btn-backspace") {
-            if (startPos > 0 || startPos !== endPos) {
-                const deleteCount = (startPos === endPos) ? 1 : 0;
-                const newText = text.substring(0, startPos - deleteCount) + text.substring(endPos);
-                textarea.value = newText;
-                textarea.setSelectionRange(startPos - deleteCount, startPos - deleteCount);
+            editor.setValue("");
+        } 
+        else if (id === "btn-backspace") {
+            // If something is selected, delete selection
+            if (doc.somethingSelected()) {
+                doc.replaceSelection("");
+            } else {
+                // Delete one character before cursor
+                editor.execCommand("delCharBefore");
             }
         } 
         else if (id === "btn-left") {
-            const newPos = (startPos !== endPos) ? startPos : Math.max(0, startPos - 1);
-            textarea.setSelectionRange(newPos, newPos);
+            editor.execCommand("goCharLeft");
         }
         else if (id === "btn-right") {
-            const newPos = (startPos !== endPos) ? endPos : Math.min(text.length, endPos + 1);
-            textarea.setSelectionRange(newPos, newPos);
+            editor.execCommand("goCharRight");
         }
         else if (id === "btn-newline") {
-            insertAtCursor("\n");
-        } else if (val) {
-            insertAtCursor(val);
+            editor.execCommand("newlineAndIndent");
+        } 
+        else if (val) {
+            doc.replaceRange(val, cursor);
         }
-
-        // Save session after every virtual key press
-        saveSession();
     }
 
-    function insertAtCursor(char) {
-        let startPos = textarea.selectionStart;
-        let endPos = textarea.selectionEnd;
-        let text = textarea.value;
-
-        textarea.value = text.substring(0, startPos) + char + text.substring(endPos);
-        textarea.setSelectionRange(startPos + char.length, startPos + char.length);
-    }
-
-    // --- 3. Calculation Logic (API) ---
+    // --- 4. Calculation Logic (API) ---
     calcForm.addEventListener("submit", (event) => {
         event.preventDefault();
 
         const formData = new FormData(calcForm);
         const mode = formData.get("output_mode");
         const show_steps = formData.get("show_steps") === "true";
-        const text = textarea.value;
+        // Get the new setting
+        const stateless_mode = formData.get("stateless_mode") === "true";
+        
+        // Get value directly from CodeMirror
+        const text = editor.getValue();
 
         const expression_lines = text.split('\n').filter(line => line.trim().length > 0);
 
-        outputPre.textContent = "Calculating...";
-        outputPre.classList.remove("output-placeholder");
+        outputDiv.innerHTML = "Calculating..."; 
+        outputDiv.classList.remove("output-placeholder");
         submitButton.disabled = true;
         submitButton.textContent = "...";
 
@@ -144,7 +151,8 @@ document.addEventListener("DOMContentLoaded", () => {
             body: JSON.stringify({
                 mode: mode,
                 inputs: expression_lines,
-                show_steps: show_steps
+                show_steps: show_steps,
+                stateless_mode: stateless_mode // Pass the new setting
             }),
         })
         .then(response => {
@@ -154,10 +162,17 @@ document.addEventListener("DOMContentLoaded", () => {
             return response.json(); 
         })
         .then(data => {
-            outputPre.textContent = data.output;
+            // Replace newlines with HTML breaks
+            const formattedOutput = data.output.replace(/\n/g, "<br>");
+            outputDiv.innerHTML = formattedOutput;
+
+            // Trigger MathJax
+            if (window.MathJax) {
+                MathJax.typesetPromise([outputDiv]).catch((err) => console.log(err));
+            }
         })
         .catch(error => {
-            outputPre.textContent = `Error: ${error.message}`;
+            outputDiv.textContent = `Error: ${error.message}`;
         })
         .finally(() => {
             submitButton.disabled = false;

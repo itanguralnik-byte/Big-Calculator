@@ -21,6 +21,11 @@
     
     --code-bg: #111827;
     --code-text: #f3f4f6;
+
+    /* CodeMirror Specifics (Derived from main vars) */
+    --cm-bg: var(--bg-page);
+    --cm-cursor: var(--text-main);
+    --cm-gutter: #e5e7eb; /* Light grey for line number bar */
 }
 
 [data-theme="dark"] {
@@ -44,6 +49,10 @@
     
     --code-bg: #000000;
     --code-text: #10b981;
+
+    --cm-bg: #000000; /* Darker bg for code editor in dark mode */
+    --cm-cursor: #ffffff;
+    --cm-gutter: #374151;
 }
 
 /* --- Basic Reset & Body --- */
@@ -155,21 +164,59 @@ h1 { font-size: 1.5rem; font-weight: 700; color: var(--text-main); }
     text-decoration-color: #ef4444;
 }
 
-/* --- Textarea --- */
-textarea {
-    width: 100%;
-    font-family: 'JetBrains Mono', monospace; 
-    font-size: 1.1rem;
-    padding: 1rem;
-    background-color: var(--bg-page);
-    color: var(--text-main);
+/* --- Input Section (REPLACED Textarea styling with CodeMirror) --- */
+.input-section {
     border: 2px solid var(--border-color);
     border-radius: 0.75rem;
-    resize: none; 
-    outline: none;
+    overflow: hidden; /* Contains the editor corners */
     transition: border-color 0.2s;
 }
-textarea:focus { border-color: var(--primary); }
+.input-section:focus-within {
+    border-color: var(--primary);
+}
+
+/* CodeMirror Core Overrides */
+.CodeMirror {
+    height: 180px; /* Fixed height for the editor */
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.1rem;
+    background-color: var(--cm-bg) !important;
+    color: var(--text-main) !important;
+}
+
+/* Line Numbers & Gutter */
+.CodeMirror-gutters {
+    background-color: var(--cm-bg) !important;
+    border-right: 1px solid var(--border-color) !important;
+    color: var(--text-muted) !important;
+}
+.CodeMirror-linenumber {
+    color: var(--text-muted) !important;
+}
+
+/* Cursor & Selection */
+.CodeMirror-cursor {
+    border-left: 2px solid var(--cm-cursor) !important;
+}
+.CodeMirror-selected {
+    background: rgba(59, 130, 246, 0.2) !important; /* Primary color Selection */
+}
+
+/* Syntax Highlighting Colors (Customized for Calculator) */
+.cm-number { color: #d946ef !important; } /* Pink/Purple for numbers */
+.cm-operator { color: var(--primary) !important; font-weight: bold; }
+.cm-variable { color: var(--text-main) !important; }
+.cm-builtin { color: #10b981 !important; } /* Green for sin, cos */
+.cm-keyword { color: #f59e0b !important; } /* Orange for keywords */
+.cm-comment { color: #9ca3af !important; font-style: italic; }
+
+/* Active Line Highlight */
+.CodeMirror-activeline-background {
+    background: rgba(0, 0, 0, 0.05);
+}
+[data-theme="dark"] .CodeMirror-activeline-background {
+    background: rgba(255, 255, 255, 0.05);
+}
 
 /* --- VIRTUAL KEYPAD --- */
 .virtual-keypad {
@@ -215,18 +262,32 @@ textarea:focus { border-color: var(--primary); }
 
 /* --- Output --- */
 h2 { font-size: 1.1rem; color: var(--text-muted); border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; margin-bottom: 0.5rem; }
-pre {
+
+/* Output Box (Replaces pre) */
+.output-box {
     background-color: var(--code-bg);
     color: var(--code-text);
     padding: 1rem;
     border-radius: 0.75rem;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.95rem;
     min-height: 100px;
     border: 1px solid var(--border-color);
+    
+    font-family: 'Inter', sans-serif;
+    font-size: 1rem;
+    line-height: 1.6;
+    overflow-x: auto;
 }
+
+/* MathJax Overrides */
+mjx-container {
+    overflow-x: auto;
+    overflow-y: hidden;
+    max-width: 100%;
+}
+[data-theme="dark"] mjx-container {
+    color: var(--code-text) !important;
+}
+
 .output-placeholder { color: #6b7280; font-style: italic; text-align: center; display: flex; align-items: center; justify-content: center; }
 
 /* --- MOBILE OPTIMIZATIONS --- */
@@ -235,7 +296,8 @@ pre {
     .main-wrapper { align-items: flex-start; } 
     
     .container {
-        height: 100vh;
+        /* Changed to 100dvh to handle mobile address bars better */
+        height: 100dvh;
         max-width: none;
         border-radius: 0;
         padding: 1rem;
@@ -247,7 +309,15 @@ pre {
     header h1 { font-size: 1.25rem; }
     header .hint { display: none; }
 
-    .output-section { flex-grow: 1; overflow-y: auto; margin-bottom: 1rem; order: 2;}
+    .output-section { 
+        flex-grow: 1; 
+        overflow-y: auto; 
+        margin-bottom: 1rem; 
+        order: 2;
+        /* --- FIX: Enforce minimum height so it doesn't disappear --- */
+        min-height: 150px; 
+        flex-shrink: 0;
+    }
     
     form {
         margin-top: auto;
@@ -258,6 +328,8 @@ pre {
     
     .settings-bar { justify-content: space-between; margin-bottom: 0.5rem; }
     
-    #inputs-textarea { height: 80px; font-size: 1.25rem; }
+    /* CodeMirror Mobile Height */
+    .CodeMirror { height: 80px; font-size: 1.1rem; }
+    
     .k-btn { padding: 1rem 0; font-size: 1.25rem; }
 }

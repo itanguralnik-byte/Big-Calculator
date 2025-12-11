@@ -68,6 +68,8 @@ def api_calculate():
         mode = data.get("mode", "fraction")
         expression_lines = data.get("inputs", [])
         show_steps = data.get("show_steps", False)
+        # Get the new stateless mode flag
+        stateless_mode = data.get("stateless_mode", False) 
 
         # 4. INPUT COMPLEXITY LIMITS (The "Logic Firewall")
         # Even if payload is small, a user could send 1000 tiny lines 
@@ -82,8 +84,8 @@ def api_calculate():
             if len(line) > 500:
                 return jsonify({"output": f"ERROR: Line {i+1} is too long (Max 500 chars)."}), 400
 
-        # Run the calculator logic
-        output = run_calculator(mode, expression_lines, show_steps=show_steps)
+        # Run the calculator logic, passing the new flag
+        output = run_calculator(mode, expression_lines, show_steps=show_steps, stateless_mode=stateless_mode)
         return jsonify({"output": output})
 
     except Exception as e:

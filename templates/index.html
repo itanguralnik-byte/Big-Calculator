@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text x=%2250%22 y=%2290%22 font-size=%2280%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22%233b82f6%22>$\Sigma$</text></svg>">
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Big Calculator</title>
@@ -9,7 +10,28 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+    
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+    <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['$$', '$$']],
+        processEscapes: true
+      },
+      svg: {
+        fontCache: 'global'
+      }
+    };
+    </script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/python/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/selection/active-line.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/edit/matchbrackets.min.js"></script>
 </head>
 <body>
     <button id="theme-toggle" class="icon-btn" aria-label="Toggle Dark Mode">
@@ -42,12 +64,19 @@
                             <input type="checkbox" id="show_steps" name="show_steps" value="true">
                             <label for="show_steps">Show steps</label>
                         </div>
+                        
+                        <!-- NEW SETTING: Stateless Mode Toggle -->
+                        <div class="checkbox-wrapper">
+                            <input type="checkbox" id="stateless_mode" name="stateless_mode" value="true">
+                            <label for="stateless_mode" title="Variables are not saved between lines; assignments (e.g., x=5) are treated as equations to solve.">Stateless Mode</label>
+                        </div>
+                        
                         <button type="button" id="btn-clear-history" class="text-btn">Clear History</button>
                     </div>
                 </div>
                 
                 <div class="input-section">
-                    <textarea id="inputs-textarea" name="inputs" rows="4" placeholder="Type here..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+                    <textarea id="inputs-textarea" name="inputs" placeholder="Type here..."></textarea>
                 </div>
 
                 <div class="virtual-keypad">
@@ -97,7 +126,7 @@
 
             <div class="output-section">
                 <h2>Results</h2>
-                <pre id="output-pre" class="output-placeholder">Ready to calculate.</pre>
+                <div id="output-div" class="output-box output-placeholder">Ready to calculate.</div>
             </div>
         </div>
     </div>
