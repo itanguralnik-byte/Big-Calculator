@@ -2,6 +2,7 @@ import sys
 import math
 import statistics
 import re
+import unicodedata 
 from fractions import Fraction
 import sympy
 from sympy.parsing.sympy_parser import (
@@ -14,7 +15,7 @@ from sympy.parsing.sympy_parser import (
 from sympy import (
     symbols, Symbol, Eq, solve, simplify, expand, factor, 
     diff, integrate, limit, oo, zoo, I, pi, E, Rational,
-    Integer, Float, latex
+    Integer, Float, latex, Function
 )
 
 # ============================================================
@@ -50,6 +51,7 @@ SAFE_LOCALS = {
     'Float': Float,
     'Symbol': Symbol,
     'Rational': Rational,
+    'Function': Function,
 
     # Constants
     'pi': pi,
@@ -171,6 +173,35 @@ class Calculator:
         if line.startswith("#") or line.startswith("//"):
             return None
 
+        # ============================================================
+        # SECURITY FIXES
+        # ============================================================
+        
+        # 1. Unicode Normalization (Fixes Homoglyph Attacks)
+        # Converts fullwidth chars like 'ｌ' to 'l' and '＿' to '_'
+        line = unicodedata.normalize('NFKC', line)
+
+        # 2. Block Obfuscation
+        # Backslashes allow hex escapes like \x5f which hide keywords
+        if "\\" in line:
+             raise CalculationError("Security Error: Backslashes are forbidden to prevent obfuscation.")
+
+        # 3. Block Introspection & Private Attributes
+        # "__" catches dunder methods (__class__)
+        # "._" catches private attributes (obj._private or obj._class_)
+        if "__" in line or "._" in line:
+            raise CalculationError("Security Error: Direct access to internal attributes is forbidden.")
+        
+        # 4. Block Injection
+        if ".format(" in line:
+            raise CalculationError("Security Error: String formatting is forbidden.")
+            
+        # 5. Block Dangerous Functions
+        if "lambda" in line:
+            raise CalculationError("Security Error: Lambda functions are forbidden.")
+
+        # ============================================================
+
         # 2. Setup Environment
         local_env = SAFE_LOCALS.copy()
         
@@ -261,6 +292,9 @@ class Calculator:
             if "NotImplementedError" in error_message:
                 raise CalculationError(f"Feature not implemented: {error_message}")
             
+            if "Security Error" in error_message:
+                 raise CalculationError(error_message)
+
             # Default fallback for all other exceptions
             raise CalculationError(error_message)
 

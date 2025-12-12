@@ -6,6 +6,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Big Calculator</title>
     
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <meta name="theme-color" content="#3b82f6">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -21,9 +27,7 @@
         displayMath: [['$$', '$$']],
         processEscapes: true
       },
-      svg: {
-        fontCache: 'global'
-      }
+      svg: { fontCache: 'global' }
     };
     </script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
@@ -65,10 +69,9 @@
                             <label for="show_steps">Show steps</label>
                         </div>
                         
-                        <!-- NEW SETTING: Stateless Mode Toggle -->
                         <div class="checkbox-wrapper">
                             <input type="checkbox" id="stateless_mode" name="stateless_mode" value="true">
-                            <label for="stateless_mode" title="Variables are not saved between lines; assignments (e.g., x=5) are treated as equations to solve.">Stateless Mode</label>
+                            <label for="stateless_mode" title="Variables are not saved between lines">Stateless Mode</label>
                         </div>
                         
                         <button type="button" id="btn-clear-history" class="text-btn">Clear History</button>
@@ -127,6 +130,10 @@
             <div class="output-section">
                 <h2>Results</h2>
                 <div id="output-div" class="output-box output-placeholder">Ready to calculate.</div>
+            </div>
+            
+            <div id="engine-status" style="margin-top: 10px; font-size: 0.8rem; color: #6b7280; text-align: center;">
+                Initializing Python Engine...
             </div>
         </div>
     </div>

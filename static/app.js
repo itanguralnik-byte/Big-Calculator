@@ -7,81 +7,94 @@ document.addEventListener("DOMContentLoaded", () => {
     const textareaRaw = document.getElementById("inputs-textarea");
     const themeToggle = document.getElementById("theme-toggle");
     const clearHistoryBtn = document.getElementById("btn-clear-history");
-    
-    // --- Constants ---
-    const STORAGE_KEY = "big_calc_session";
+    const engineStatus = document.getElementById("engine-status");
 
-    // --- 0. Initialize CodeMirror ---
-    // This replaces the raw textarea with the code editor
+    // --- Service Worker Registration (Caching) ---
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/static/sw.js')
+            .then(() => console.log("Service Worker Registered (Caching Enabled)"))
+            .catch(err => console.log("SW Registration Failed:", err));
+    }
+
+    // --- Web Worker Initialization (Background Thread) ---
+    const worker = new Worker("/static/calc_worker.js");
+    let engineReady = false;
+
+    submitButton.disabled = true;
+    submitButton.textContent = "Loading Engine...";
+
+    worker.onmessage = (e) => {
+        const data = e.data;
+        
+        if (data.status === "ready") {
+            engineReady = true;
+            submitButton.disabled = false;
+            submitButton.textContent = "RUN";
+            if(engineStatus) engineStatus.textContent = "Engine Ready (Background Thread)";
+        } 
+        else if (data.status === "success") {
+            // Handle successful calculation
+            const formattedOutput = data.output.replace(/\n/g, "<br>");
+            outputDiv.innerHTML = formattedOutput;
+            if (window.MathJax) MathJax.typesetPromise([outputDiv]);
+            
+            submitButton.disabled = false;
+            submitButton.textContent = "RUN";
+            outputDiv.classList.remove("output-placeholder");
+        } 
+        else if (data.status === "error") {
+            console.error("Worker Error:", data.message);
+            outputDiv.textContent = "Error: " + data.message;
+            submitButton.disabled = false;
+            submitButton.textContent = "RUN";
+        }
+    };
+
+    // --- CodeMirror & UI Logic (Same as before) ---
+    const STORAGE_KEY = "big_calc_session";
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
     const editor = CodeMirror.fromTextArea(textareaRaw, {
-        mode: "python", // Python mode matches SymPy/Calculator syntax
-        theme: "default", // We override colors in CSS via variables
-        lineNumbers: true,
-        lineWrapping: true,
-        matchBrackets: true,
-        styleActiveLine: true,
-        viewportMargin: Infinity // Auto-resize height logic if needed
+        mode: "python", theme: "default", lineNumbers: true, 
+        lineWrapping: true, matchBrackets: true, styleActiveLine: true,
+        viewportMargin: Infinity, readOnly: isTouchDevice ? "nocursor" : false 
     });
 
-    // --- 1. Session History ---
+    // History Logic
     function loadSession() {
         const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved !== null) {
-            editor.setValue(saved);
-        }
+        if (saved !== null) editor.setValue(saved);
     }
-
-    function saveSession() {
-        localStorage.setItem(STORAGE_KEY, editor.getValue());
-    }
-
-    // Load history immediately
     loadSession();
+    editor.on("change", () => localStorage.setItem(STORAGE_KEY, editor.getValue()));
 
-    // Save on any change in the editor
-    editor.on("change", saveSession);
-
-    // Clear History Button Logic
     if (clearHistoryBtn) {
         clearHistoryBtn.addEventListener("click", () => {
-            // IMPORTANT: Use custom modal UI instead of confirm() in production
-            if (window.confirm("Are you sure you want to clear your calculation history?")) {
+            if (window.confirm("Clear history?")) {
                 editor.setValue("");
-                editor.focus();
-                outputDiv.textContent = "Ready to calculate.";
-                outputDiv.classList.add("output-placeholder");
+                if (!isTouchDevice) editor.focus();
+                outputDiv.textContent = "Ready.";
                 localStorage.removeItem(STORAGE_KEY);
             }
         });
     }
 
-    // --- 2. Dark Mode Logic ---
+    // Theme Logic
     let isDark = localStorage.getItem("theme") === "dark";
     updateTheme();
-
     themeToggle.addEventListener("click", () => {
         isDark = !isDark;
         localStorage.setItem("theme", isDark ? "dark" : "light");
         updateTheme();
     });
-
     function updateTheme() {
         document.documentElement.setAttribute("data-theme", isDark ? "dark" : "light");
     }
 
-    // --- 3. Virtual Keypad Logic (Refactored for CodeMirror) ---
+    // Keypad Logic
     const keys = document.querySelectorAll(".k-btn");
-    
-    // Detect touch device
-    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-
-    if (isTouchDevice) {
-        // Optional: Can add specific touch handling here if needed
-    }
-
     keys.forEach(btn => {
         btn.addEventListener("click", (e) => {
-            // Prevent form submit for non-submit buttons
             if (btn.type !== "submit") {
                 e.preventDefault();
                 handleKeyInput(btn);
@@ -92,52 +105,32 @@ document.addEventListener("DOMContentLoaded", () => {
     function handleKeyInput(btn) {
         const val = btn.dataset.val;
         const id = btn.id;
-        
-        editor.focus();
-        
-        // Get current cursor position
+        if (!isTouchDevice) editor.focus();
         const doc = editor.getDoc();
         const cursor = doc.getCursor(); 
 
-        if (id === "btn-clear") {
-            editor.setValue("");
-        } 
+        if (id === "btn-clear") editor.setValue("");
         else if (id === "btn-backspace") {
-            // If something is selected, delete selection
-            if (doc.somethingSelected()) {
-                doc.replaceSelection("");
-            } else {
-                // Delete one character before cursor
-                editor.execCommand("delCharBefore");
-            }
+            if (doc.somethingSelected()) doc.replaceSelection("");
+            else editor.execCommand("delCharBefore");
         } 
-        else if (id === "btn-left") {
-            editor.execCommand("goCharLeft");
-        }
-        else if (id === "btn-right") {
-            editor.execCommand("goCharRight");
-        }
-        else if (id === "btn-newline") {
-            editor.execCommand("newlineAndIndent");
-        } 
-        else if (val) {
-            doc.replaceRange(val, cursor);
-        }
+        else if (id === "btn-left") editor.execCommand("goCharLeft");
+        else if (id === "btn-right") editor.execCommand("goCharRight");
+        else if (id === "btn-newline") editor.execCommand("newlineAndIndent");
+        else if (val) doc.replaceRange(val, cursor);
     }
 
-    // --- 4. Calculation Logic (API) ---
+    // --- Submit Logic (Sends message to Worker) ---
     calcForm.addEventListener("submit", (event) => {
         event.preventDefault();
 
-        const formData = new FormData(calcForm);
-        const mode = formData.get("output_mode");
-        const show_steps = formData.get("show_steps") === "true";
-        // Get the new setting
-        const stateless_mode = formData.get("stateless_mode") === "true";
-        
-        // Get value directly from CodeMirror
-        const text = editor.getValue();
+        if (!engineReady) {
+            outputDiv.textContent = "Engine is still loading resources...";
+            return;
+        }
 
+        const formData = new FormData(calcForm);
+        const text = editor.getValue();
         const expression_lines = text.split('\n').filter(line => line.trim().length > 0);
 
         outputDiv.innerHTML = "Calculating..."; 
@@ -145,38 +138,13 @@ document.addEventListener("DOMContentLoaded", () => {
         submitButton.disabled = true;
         submitButton.textContent = "...";
 
-        fetch("/api/calculate", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                mode: mode,
-                inputs: expression_lines,
-                show_steps: show_steps,
-                stateless_mode: stateless_mode // Pass the new setting
-            }),
-        })
-        .then(response => {
-            if (!response.ok) {
-                return response.json().then(errData => { throw new Error(errData.output); });
-            }
-            return response.json(); 
-        })
-        .then(data => {
-            // Replace newlines with HTML breaks
-            const formattedOutput = data.output.replace(/\n/g, "<br>");
-            outputDiv.innerHTML = formattedOutput;
-
-            // Trigger MathJax
-            if (window.MathJax) {
-                MathJax.typesetPromise([outputDiv]).catch((err) => console.log(err));
-            }
-        })
-        .catch(error => {
-            outputDiv.textContent = `Error: ${error.message}`;
-        })
-        .finally(() => {
-            submitButton.disabled = false;
-            submitButton.textContent = "RUN";
+        // Send data to worker
+        worker.postMessage({
+            type: "CALCULATE",
+            mode: formData.get("output_mode"),
+            show_steps: formData.get("show_steps") === "true",
+            stateless_mode: formData.get("stateless_mode") === "true",
+            expression_lines: expression_lines
         });
     });
 });
