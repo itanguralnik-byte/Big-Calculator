@@ -120,6 +120,10 @@ document.addEventListener("DOMContentLoaded", () => {
         s = s.replace(/\\alpha/g, "alpha");
         s = s.replace(/\\beta/g, "beta");
 
+        // 3.5 Mixed Fractions: 1\frac{1}{2} -> 1+1/2
+        // If a digit is immediately followed by a fraction, treat as addition (Mixed Number)
+        s = s.replace(/(\d)\s*\\frac/g, "$1+\\frac");
+
         // 4. Fractions: \frac{a}{b} -> (a)/(b)
         while (s.includes("\\frac{")) {
             let oldS = s;
@@ -423,7 +427,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 else if (val === "cos(") { mathQuillInstance.cmd("cos"); mathQuillInstance.cmd("("); }
                 else if (val === "sqrt(") mathQuillInstance.cmd("sqrt");
                 else if (val === "log(") { mathQuillInstance.cmd("log"); mathQuillInstance.cmd("("); }
-                else if (val === "/") mathQuillInstance.cmd("frac");
+                // FIX: Use typedText("/") for smart fraction wrapping instead of cmd("frac")
+                else if (val === "/") mathQuillInstance.cmd("\\div");
                 else if (val === "^") mathQuillInstance.cmd("^");
                 else if (val === "π") mathQuillInstance.cmd("pi");
                 else {
