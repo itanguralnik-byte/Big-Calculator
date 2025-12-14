@@ -16,8 +16,16 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     
+    <!-- CodeMirror -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
     
+    <!-- jQuery (Required for MathQuill) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
+
+    <!-- MathQuill -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/mathquill/0.10.1/mathquill.min.css"/>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathquill/0.10.1/mathquill.min.js"></script>
+
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 
     <script>
@@ -32,6 +40,13 @@
     </script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     
+    <!-- Compression Library for Shareable URLs -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
+
+    <!-- Export Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/python/python.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/selection/active-line.min.js"></script>
@@ -44,97 +59,142 @@
     </button>
 
     <div class="main-wrapper">
-        <div class="container">
-            <header>
-                <h1>Big Calculator</h1>
-                <p class="hint">Enter math or assignments (e.g., <code>a=5; sin(a)</code>).</p>
-            </header>
+        <div class="app-layout">
+            
+            <!-- Left Pane: Calculator -->
+            <div class="container main-pane">
+                <header>
+                    <h1>Big Calculator</h1>
+                    <p class="hint">Enter math or assignments (e.g., <code>a=5; sin(a)</code>).</p>
+                </header>
 
-            <form id="calc-form">
-                <div class="settings-bar">
-                    <div class="mode-toggle">
-                        <label>
-                            <input type="radio" name="output_mode" value="fraction" checked>
-                            <span class="radio-label-content">Fraction</span>
-                        </label>
-                        <label>
-                            <input type="radio" name="output_mode" value="float">
-                            <span class="radio-label-content">Float</span>
-                        </label>
+                <form id="calc-form">
+                    <div class="settings-bar">
+                        <!-- Input Mode Toggle (NEW) -->
+                        <div class="mode-toggle">
+                            <label>
+                                <input type="radio" name="input_mode" value="visual" checked>
+                                <span class="radio-label-content">Visual</span>
+                            </label>
+                            <label>
+                                <input type="radio" name="input_mode" value="code">
+                                <span class="radio-label-content">Code</span>
+                            </label>
+                        </div>
+
+                        <!-- Output Mode Toggle -->
+                        <div class="mode-toggle">
+                            <label>
+                                <input type="radio" name="output_mode" value="fraction" checked>
+                                <span class="radio-label-content">Frac</span>
+                            </label>
+                            <label>
+                                <input type="radio" name="output_mode" value="float">
+                                <span class="radio-label-content">Dec</span>
+                            </label>
+                        </div>
+                        
+                        <div class="right-settings">
+                            <div class="checkbox-wrapper">
+                                <input type="checkbox" id="show_steps" name="show_steps" value="true">
+                                <label for="show_steps">Show steps</label>
+                            </div>
+                            
+                            <div class="checkbox-wrapper">
+                                <input type="checkbox" id="stateless_mode" name="stateless_mode" value="true">
+                                <label for="stateless_mode" title="Variables are not saved between lines">Stateless</label>
+                            </div>
+                            
+                            <button type="button" id="btn-share" class="text-btn" style="margin-right: 8px;">Share</button>
+                            <button type="button" id="btn-clear-history" class="text-btn">Clear</button>
+                        </div>
                     </div>
                     
-                    <div class="right-settings">
-                        <div class="checkbox-wrapper">
-                            <input type="checkbox" id="show_steps" name="show_steps" value="true">
-                            <label for="show_steps">Show steps</label>
+                    <div class="input-section">
+                        <!-- MathQuill Visual Editor -->
+                        <div id="mathquill-container" class="mq-editor-wrapper">
+                            <div id="mq-input-field"></div>
                         </div>
-                        
-                        <div class="checkbox-wrapper">
-                            <input type="checkbox" id="stateless_mode" name="stateless_mode" value="true">
-                            <label for="stateless_mode" title="Variables are not saved between lines">Stateless Mode</label>
+
+                        <!-- CodeMirror Code Editor (Hidden by default) -->
+                        <div id="codemirror-container" style="display:none;">
+                            <textarea id="inputs-textarea" name="inputs" placeholder="Type here..."></textarea>
                         </div>
-                        
-                        <button type="button" id="btn-clear-history" class="text-btn">Clear History</button>
                     </div>
+
+                    <div class="virtual-keypad">
+                        <button type="button" class="k-btn secondary span-3" id="btn-left">←</button>
+                        <button type="button" class="k-btn secondary span-3" id="btn-right">→</button>
+
+                        <button type="button" class="k-btn fn" data-val="sin(">sin</button>
+                        <button type="button" class="k-btn fn" data-val="cos(">cos</button>
+                        <button type="button" class="k-btn fn" data-val="sqrt(">√</button>
+                        <button type="button" class="k-btn fn" data-val="log(">log</button>
+                        <button type="button" class="k-btn secondary" data-val="(">(</button>
+                        <button type="button" class="k-btn secondary" data-val=")">)</button>
+
+                        <button type="button" class="k-btn var" data-val="x">x</button>
+                        <button type="button" class="k-btn var" data-val="y">y</button>
+                        <button type="button" class="k-btn var" data-val="a">a</button>
+                        <button type="button" class="k-btn var" data-val="π" style="font-style: normal;">π</button>
+                        <button type="button" class="k-btn op" data-val="^">^</button>
+                        <button type="button" class="k-btn secondary" data-val=";">;</button>
+
+                        <button type="button" class="k-btn" data-val="7">7</button>
+                        <button type="button" class="k-btn" data-val="8">8</button>
+                        <button type="button" class="k-btn" data-val="9">9</button>
+                        <button type="button" class="k-btn op" data-val="/">÷</button>
+                        <button type="button" class="k-btn op" data-val="%">%</button>
+                        <button type="button" class="k-btn danger" id="btn-clear">AC</button>
+
+                        <button type="button" class="k-btn" data-val="4">4</button>
+                        <button type="button" class="k-btn" data-val="5">5</button>
+                        <button type="button" class="k-btn" data-val="6">6</button>
+                        <button type="button" class="k-btn op" data-val="*">×</button>
+                        <button type="button" class="k-btn op" data-val="=">=</button>
+                        <button type="button" class="k-btn danger" id="btn-backspace">⌫</button>
+
+                        <button type="button" class="k-btn" data-val="1">1</button>
+                        <button type="button" class="k-btn" data-val="2">2</button>
+                        <button type="button" class="k-btn" data-val="3">3</button>
+                        <button type="button" class="k-btn op" data-val="-">−</button>
+                        <button type="button" class="k-btn action" id="btn-newline" style="grid-column: span 2;">↵ Enter</button>
+
+                        <button type="button" class="k-btn" data-val="0" style="grid-column: span 2;">0</button>
+                        <button type="button" class="k-btn" data-val=".">.</button>
+                        <button type="button" class="k-btn op" data-val="+">+</button>
+                        <button type="submit" id="submit-button" class="k-btn primary span-2">RUN</button>
+                    </div>
+                </form>
+
+                <div class="output-section">
+                    <div class="output-header">
+                        <h2>Results</h2>
+                        <div class="export-actions">
+                            <button type="button" id="btn-export-latex" class="text-btn small" title="Copy LaTeX Source">LaTeX</button>
+                            <button type="button" id="btn-export-png" class="text-btn small" title="Download Image">PNG</button>
+                            <button type="button" id="btn-export-pdf" class="text-btn small" title="Download PDF">PDF</button>
+                        </div>
+                    </div>
+                    <div id="output-div" class="output-box output-placeholder">Ready to calculate.</div>
                 </div>
                 
-                <div class="input-section">
-                    <textarea id="inputs-textarea" name="inputs" placeholder="Type here..."></textarea>
+                <div id="engine-status" style="margin-top: 10px; font-size: 0.8rem; color: #6b7280; text-align: center;">
+                    Initializing Python Engine...
                 </div>
+            </div>
 
-                <div class="virtual-keypad">
-                    <button type="button" class="k-btn secondary span-3" id="btn-left">←</button>
-                    <button type="button" class="k-btn secondary span-3" id="btn-right">→</button>
-
-                    <button type="button" class="k-btn fn" data-val="sin(">sin</button>
-                    <button type="button" class="k-btn fn" data-val="cos(">cos</button>
-                    <button type="button" class="k-btn fn" data-val="sqrt(">√</button>
-                    <button type="button" class="k-btn fn" data-val="log(">log</button>
-                    <button type="button" class="k-btn secondary" data-val="(">(</button>
-                    <button type="button" class="k-btn secondary" data-val=")">)</button>
-
-                    <button type="button" class="k-btn var" data-val="x">x</button>
-                    <button type="button" class="k-btn var" data-val="y">y</button>
-                    <button type="button" class="k-btn var" data-val="a">a</button>
-                    <button type="button" class="k-btn var" data-val="π" style="font-style: normal;">π</button>
-                    <button type="button" class="k-btn op" data-val="^">^</button>
-                    <button type="button" class="k-btn secondary" data-val=";">;</button>
-
-                    <button type="button" class="k-btn" data-val="7">7</button>
-                    <button type="button" class="k-btn" data-val="8">8</button>
-                    <button type="button" class="k-btn" data-val="9">9</button>
-                    <button type="button" class="k-btn op" data-val="/">÷</button>
-                    <button type="button" class="k-btn op" data-val="%">%</button>
-                    <button type="button" class="k-btn danger" id="btn-clear">AC</button>
-
-                    <button type="button" class="k-btn" data-val="4">4</button>
-                    <button type="button" class="k-btn" data-val="5">5</button>
-                    <button type="button" class="k-btn" data-val="6">6</button>
-                    <button type="button" class="k-btn op" data-val="*">×</button>
-                    <button type="button" class="k-btn op" data-val="=">=</button>
-                    <button type="button" class="k-btn danger" id="btn-backspace">⌫</button>
-
-                    <button type="button" class="k-btn" data-val="1">1</button>
-                    <button type="button" class="k-btn" data-val="2">2</button>
-                    <button type="button" class="k-btn" data-val="3">3</button>
-                    <button type="button" class="k-btn op" data-val="-">−</button>
-                    <button type="button" class="k-btn action" id="btn-newline" style="grid-column: span 2;">↵ Enter</button>
-
-                    <button type="button" class="k-btn" data-val="0" style="grid-column: span 2;">0</button>
-                    <button type="button" class="k-btn" data-val=".">.</button>
-                    <button type="button" class="k-btn op" data-val="+">+</button>
-                    <button type="submit" id="submit-button" class="k-btn primary span-2">RUN</button>
+            <!-- Right Pane: Variables Sidebar -->
+            <div class="sidebar container" id="var-sidebar">
+                <div class="sidebar-header">
+                    <h3>Variables</h3>
+                    <span class="badge" id="var-count">0</span>
                 </div>
-            </form>
+                <div id="var-list" class="var-list-container">
+                    <div class="empty-state">No variables defined.</div>
+                </div>
+            </div>
 
-            <div class="output-section">
-                <h2>Results</h2>
-                <div id="output-div" class="output-box output-placeholder">Ready to calculate.</div>
-            </div>
-            
-            <div id="engine-status" style="margin-top: 10px; font-size: 0.8rem; color: #6b7280; text-align: center;">
-                Initializing Python Engine...
-            </div>
         </div>
     </div>
 

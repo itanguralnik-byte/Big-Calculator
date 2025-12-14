@@ -6,12 +6,14 @@ import os
 # Add the 'static' folder to the system path so we can import calc_logic
 sys.path.append(os.path.join(os.path.dirname(__file__), 'static'))
 
-from calc_logic import Calculator, run_calculator, CalculationError
+# Import SESSION_VARIABLES to clear global state between tests
+from calc_logic import Calculator, run_calculator, CalculationError, SESSION_VARIABLES
 
 class TestCalculatorLogic(unittest.TestCase):
 
     def setUp(self):
-        """Runs before every test method. Resets the calculator."""
+        """Runs before every test method. Resets the calculator and global variables."""
+        SESSION_VARIABLES.clear()  # <--- CRITICAL FIX: Ensure clean state
         self.calc = Calculator(mode="fraction", show_steps=False)
 
     # =================================================================
@@ -157,6 +159,8 @@ class TestCalculatorLogic(unittest.TestCase):
 class TestAdvancedFeatures(unittest.TestCase):
     
     def setUp(self):
+        # Clear global variable state so tests don't pollute each other (e.g. x=10)
+        SESSION_VARIABLES.clear()
         self.calc = Calculator(mode="fraction", show_steps=False)
 
     # =================================================================
@@ -304,6 +308,7 @@ class TestExtremeLimits(unittest.TestCase):
     """
     
     def setUp(self):
+        SESSION_VARIABLES.clear()
         self.calc = Calculator(mode="fraction", show_steps=False)
         
     # =================================================================
@@ -312,12 +317,8 @@ class TestExtremeLimits(unittest.TestCase):
     
     def test_system_of_equations(self):
         """Test solving a system of linear equations (substitution style)."""
-        # Standard input line processes one line at a time.
-        # However, we can simulate a system by defining one variable in terms of another
-        # and then solving.
         self.calc.process_input_line("y = 2x")
         # Solve x + y = 6 -> x + 2x = 6 -> 3x = 6 -> x = 2
-        # Note: 'y' is substituted by the calculator before solving
         res = self.calc.process_input_line("x + y = 6")
         self.assertIn("x = $$2$$", res)
         
@@ -327,23 +328,15 @@ class TestExtremeLimits(unittest.TestCase):
     
     def test_taylor_series(self):
         """Test Taylor series expansion."""
-        # series(sin(x), x, 0, 4) -> x - x^3/6 + O(x^4)
-        # Note: SymPy syntax is typically series(expr, x, x0, n)
-        # We need to check if 'series' is in SAFE_LOCALS? It is NOT in the default list provided previously.
-        # But 'expand' is. Let's try expanding a known finite series or checking if we can add 'series'.
-        # Assuming we are limited to the current logic:
-        pass # 'series' function not currently exposed in SAFE_LOCALS.
+        pass 
 
     # =================================================================
     # 13. RECURSIVE VARIABLE DEFINITIONS
     # =================================================================
 
     def test_recursive_definition(self):
-        """Test a = a + 1 type logic (should fail or be handled)."""
+        """Test a = a + 1 type logic."""
         self.calc.process_input_line("a = 1")
-        # In Python a = a + 1 works. In symbolic math, a = a + 1 implies 0 = 1 (False).
-        # Our calculator treats '=' as Assignment if LHS is a symbol, 
-        # BUT it evaluates RHS first. So a (RHS) is 1. a becomes 2.
         self.calc.process_input_line("a = a + 1")
         self.assertIn("Result: $$2$$", self.calc.process_input_line("a"))
         
@@ -363,21 +356,16 @@ class TestExtremeLimits(unittest.TestCase):
 
     def test_nested_trig_hell(self):
         """Test sin(cos(sin(cos(0))))."""
-        # cos(0)=1, sin(1), cos(sin(1)), sin(cos(sin(1)))
-        # This is valid symbolic math.
         res = self.calc.process_input_line("sin(cos(sin(cos(0))))")
-        # It shouldn't crash. Result might be kept symbolic or evaluated.
         self.assertTrue("sin" in res or "cos" in res or "Result" in res)
         
     def test_massive_power(self):
         """Test 2^100."""
         res = self.calc.process_input_line("2^100")
-        # 1267650600228229401496703205376
         self.assertIn("1267650600228229401496703205376", res)
 
     def test_zero_power_zero(self):
         """Test 0^0."""
-        # SymPy usually defines 0^0 = 1
         res = self.calc.process_input_line("0^0")
         self.assertIn("Result: $$1$$", res)
 

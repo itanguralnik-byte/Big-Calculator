@@ -1,8 +1,10 @@
+# calc_logic.py
 import sys
 import math
 import statistics
 import re
 import unicodedata 
+import html  # [CRITICAL] Needed for XSS protection
 from fractions import Fraction
 import sympy
 from sympy.parsing.sympy_parser import (
@@ -19,6 +21,13 @@ from sympy import (
 )
 
 # ============================================================
+#                 GLOBAL STATE (PERSISTENCE)
+# ============================================================
+
+# This dictionary holds variables across multiple "RUN" clicks.
+SESSION_VARIABLES = {}
+
+# ============================================================
 #                  CONFIGURATION & SECURITY
 # ============================================================
 
@@ -28,7 +37,7 @@ TRANSFORMATIONS = (
 )
 
 class CalculationError(Exception):
-    """Custom exception for calculator errors to satisfy unit tests."""
+    """Custom exception for calculator errors."""
     pass
 
 # Helper for statistics functions to handle both lists and varargs
@@ -106,11 +115,17 @@ class Calculator:
     def __init__(self, mode="float", show_steps=False, stateless_mode=False):
         self.mode = mode  # 'float' or 'fraction'
         self.show_steps = show_steps
-        self.stateless_mode = stateless_mode # New flag for stateless operation
-        self.variables = {} 
+        self.stateless_mode = stateless_mode
         self.log = []
+        
+        # Link to the global session or use a fresh dict if stateless
+        if self.stateless_mode:
+            self.variables = {}
+        else:
+            self.variables = SESSION_VARIABLES
 
     def _log(self, msg):
+        """Appends a message to the step log if steps are enabled."""
         if self.show_steps:
             self.log.append(msg)
 
@@ -159,7 +174,34 @@ class Calculator:
             return f"$${latex(final_val)}$$"
 
         except Exception:
-            return str(result)
+            # [Patch] Escape the fallback string to prevent XSS if latex() fails
+            return html.escape(str(result))
+
+    def _get_step_wrappers(self):
+        """Returns custom wrappers for calculus functions to log steps."""
+        
+        def tracked_diff(expr, *args):
+            sym = args[0] if args else symbols('x')
+            self._log(f"**Differentiating** $${latex(expr)}$$ with respect to $${latex(sym)}$$")
+            
+            result = diff(expr, *args)
+            self._log(f"&rarr; **Result**: $${latex(result)}$$")
+            return result
+
+        def tracked_integrate(expr, *args):
+            sym = args[0] if args and not isinstance(args[0], tuple) else symbols('x')
+            
+            self._log(f"**Integrating** $${latex(expr)}$$")
+            
+            result = integrate(expr, *args)
+            self._log(f"&rarr; **Result**: $${latex(result)}$$")
+            return result
+
+        return {
+            "diff": tracked_diff,
+            "derive": tracked_diff,
+            "integrate": tracked_integrate
+        }
 
     def process_input_line(self, line):
         """
@@ -174,128 +216,96 @@ class Calculator:
             return None
 
         # ============================================================
-        # SECURITY FIXES
+        # SECURITY CHECKS
         # ============================================================
-        
-        # 1. Unicode Normalization (Fixes Homoglyph Attacks)
-        # Converts fullwidth chars like 'ｌ' to 'l' and '＿' to '_'
         line = unicodedata.normalize('NFKC', line)
-
-        # 2. Block Obfuscation
-        # Backslashes allow hex escapes like \x5f which hide keywords
-        if "\\" in line:
-             raise CalculationError("Security Error: Backslashes are forbidden to prevent obfuscation.")
-
-        # 3. Block Introspection & Private Attributes
-        # "__" catches dunder methods (__class__)
-        # "._" catches private attributes (obj._private or obj._class_)
-        if "__" in line or "._" in line:
-            raise CalculationError("Security Error: Direct access to internal attributes is forbidden.")
         
-        # 4. Block Injection
-        if ".format(" in line:
-            raise CalculationError("Security Error: String formatting is forbidden.")
-            
-        # 5. Block Dangerous Functions
-        if "lambda" in line:
-            raise CalculationError("Security Error: Lambda functions are forbidden.")
-
+        if "\\" in line: raise CalculationError("Security Error: Backslashes forbidden.")
+        if "__" in line or "._" in line: raise CalculationError("Security Error: Internal access forbidden.")
+        if ".format(" in line: raise CalculationError("Security Error: Formatting forbidden.")
+        
+        # Block 'lambda' keywords
+        if "lambda" in line: raise CalculationError("Security Error: Lambda forbidden.")
+        
+        # [Patch] Explicitly block the Greek character 'λ' (lambda)
+        # because NFKC normalization turns 𝜆 (U+1D706) into λ (U+03BB), 
+        # and we must ensure no variant bypasses the logic.
+        if "λ" in line: raise CalculationError("Security Error: Greek Lambda forbidden.") 
         # ============================================================
 
         # 2. Setup Environment
         local_env = SAFE_LOCALS.copy()
         
-        # Only load saved variables if not in stateless mode
+        # Inject Step Wrappers if enabled
+        if self.show_steps:
+            local_env.update(self._get_step_wrappers())
+
         if not self.stateless_mode: 
             local_env.update(self.variables)
 
         try:
-            # 3. Handle Assignments vs Equations vs Expressions
+            # 3. Parsing Logic
             
-            # Case A: Equality Check (Double Equals) -> Boolean Evaluation
+            # Equality Check (==)
             if "==" in line:
                 expr = parse_expr(line, local_dict=local_env, global_dict=SAFE_GLOBALS, transformations=TRANSFORMATIONS)
                 return f"Result: {self._format_result(expr)}"
 
-            # Case B: Assignment or Equation (Single Equals)
+            # Assignment or Equation (=)
             if "=" in line:
-                # Split only on the first '='
                 parts = line.split("=", 1)
                 lhs_str = parts[0].strip()
                 rhs_str = parts[1].strip()
 
-                # Check if LHS is a valid variable name (Identifier)
                 if lhs_str.isidentifier():
-                    
                     if not self.stateless_mode:
-                        # --- ASSIGNMENT LOGIC (Stateful Mode) ---
-                        self._log(f"Detected assignment: {lhs_str} = {rhs_str}")
+                        # Assignment
+                        self._log(f"Assigning variable: {lhs_str}...")
                         rhs_val = parse_expr(rhs_str, local_dict=local_env, global_dict=SAFE_GLOBALS, transformations=TRANSFORMATIONS)
-                        
-                        # Store result in memory
                         self.variables[lhs_str] = rhs_val
-                        
                         if self.show_steps:
                             return f"Assigned: {lhs_str} = {self._format_result(rhs_val)}"
-                        return None
+                        return None # No output for simple assignments unless steps shown
                     else:
-                        # --- EQUATION LOGIC (Stateless Mode) ---
-                        # In stateless mode, treat x=5 as an equation to solve for x.
-                        pass # Fall through to equation solving logic below
+                        # Fallthrough to Equation Solving in Stateless
+                        pass 
                 
-                # --- EQUATION SOLVING LOGIC (Used if LHS is not identifier OR in Stateless Mode) ---
-                self._log(f"Detected equation: {lhs_str} = {rhs_str}")
-                
-                # Use base SAFE_LOCALS for equation parsing if in stateless mode
-                equation_env = local_env if not self.stateless_mode else SAFE_LOCALS
+                # Equation Solving
+                self._log(f"Solving Equation: $${lhs_str} = {rhs_str}$$")
+                equation_env = local_env if not self.stateless_mode else SAFE_LOCALS.copy()
                 
                 lhs_expr = parse_expr(lhs_str, local_dict=equation_env, global_dict=SAFE_LOCALS, transformations=TRANSFORMATIONS)
                 rhs_expr = parse_expr(rhs_str, local_dict=equation_env, global_dict=SAFE_LOCALS, transformations=TRANSFORMATIONS)
                 
-                # Find free symbols to solve for
                 free_symbols = lhs_expr.free_symbols.union(rhs_expr.free_symbols)
-                
                 if not free_symbols:
                     return "Result: " + ("True" if lhs_expr == rhs_expr else "False")
                 
-                # Prefer solving for 'x' if present, otherwise the first symbol found
                 symbol_to_solve = list(free_symbols)[0]
-                if symbols('x') in free_symbols:
-                    symbol_to_solve = symbols('x')
+                if symbols('x') in free_symbols: symbol_to_solve = symbols('x')
                 
                 solution = solve(Eq(lhs_expr, rhs_expr), symbol_to_solve)
                 return f"Result: {symbol_to_solve} = {self._format_result(solution)}"
 
-            # Case C: Standard Expression Evaluation
+            # Expression Evaluation
             else:
                 expr = parse_expr(line, local_dict=local_env, global_dict=SAFE_GLOBALS, transformations=TRANSFORMATIONS)
                 
-                result = expr
-                
-                # Check for Division by Zero
-                if result == zoo or result == oo or result == -oo:
-                    raise CalculationError("Division by zero")
+                # Validation
+                if expr == zoo or expr == oo or expr == -oo: raise CalculationError("Division by zero")
+                if hasattr(expr, "is_real") and expr.is_real is False:
+                    if expr.has(I) or expr.is_imaginary: raise CalculationError("Domain error: result is not real.")
 
-                # FIX 2: Check for Complex Domain Errors
-                if hasattr(result, "is_real") and result.is_real is False:
-                    # Check for imaginary part presence (e.g., sqrt(-1) = I, log(-5) = 1.6 + 3.14I)
-                    if result.has(I) or result.is_imaginary:
-                        raise CalculationError("Domain error: result is not real.")
-
-                return f"Result: {self._format_result(result)}"
+                return f"Result: {self._format_result(expr)}"
 
         except Exception as e:
-            # Check for SymPy specific errors that should be mapped to CalculationError
             error_message = str(e)
             if "argument of type 'int' is not iterable" in error_message or "Invalid parameters" in error_message:
                 raise CalculationError(f"Function input error: {error_message}")
             if "NotImplementedError" in error_message:
                 raise CalculationError(f"Feature not implemented: {error_message}")
-            
             if "Security Error" in error_message:
                  raise CalculationError(error_message)
-
-            # Default fallback for all other exceptions
             raise CalculationError(error_message)
 
 # ============================================================
@@ -304,20 +314,59 @@ class Calculator:
 
 def run_calculator(mode, expression_lines, show_steps=False, stateless_mode=False):
     """
-    Entry point called by app.py or tests
+    Entry point called by app.py or tests.
+    RETURNS: A Tuple (HTML_Output_String, Variables_Dict)
     """
     calc = Calculator(mode, show_steps, stateless_mode)
     full_output = []
     
+    if show_steps and expression_lines:
+        full_output.append("<h4>Calculation Steps:</h4>")
+
     for i, line in enumerate(expression_lines):
         line = line.strip()
         if not line: continue
             
         try:
             result = calc.process_input_line(line)
+            
+            if calc.log:
+                steps_html = "<ul class='steps-list'>" + "".join([f"<li>{step}</li>" for step in calc.log]) + "</ul>"
+                full_output.append(steps_html)
+                calc.log = [] 
+
             if result:
                 full_output.append(result)
+                
         except CalculationError as e:
-            full_output.append(f"Error: {str(e)}")
+            # [CRITICAL PATCH] Escape the error message to prevent XSS via exception injection
+            # e.g. if user inputs <img src=x>, python error might contain the raw string.
+            safe_error = html.escape(str(e))
+            full_output.append(f"<span style='color:red'>Error: {safe_error}</span>")
 
-    return "\n".join(full_output)
+    # Serialize Variables for the Sidebar
+    vars_out = {}
+    if not stateless_mode:
+        for name, val in SESSION_VARIABLES.items():
+            try:
+                # Create a simple preview string (limit length)
+                display_str = latex(val)
+                # Truncate extremely long latex strings for the sidebar
+                if len(display_str) > 100: 
+                    display_str = display_str[:97] + "..."
+                
+                vars_out[name] = {
+                    "display": f"$${display_str}$$",
+                    "raw": str(val) # For insertion back into code
+                }
+            except:
+                vars_out[name] = {"display": "Error", "raw": ""}
+
+    return "\n".join(full_output), vars_out
+
+def delete_variable(var_name):
+    """Helper to remove a variable from the persistent session."""
+    if var_name in SESSION_VARIABLES:
+        del SESSION_VARIABLES[var_name]
+        return True
+    return False
