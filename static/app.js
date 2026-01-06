@@ -10,6 +10,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const shareBtn = document.getElementById("btn-share");
     const engineStatus = document.getElementById("engine-status");
     
+    const btnText = document.getElementById("btn-export-text");
     const btnLatex = document.getElementById("btn-export-latex");
     const btnPng = document.getElementById("btn-export-png");
     const btnPdf = document.getElementById("btn-export-pdf");
@@ -273,6 +274,34 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // --- Export Logic ---
+    
+    // 1. Text Export (Strip $$ and HTML)
+    if (btnText) {
+        btnText.addEventListener("click", () => {
+            if (!currentRawOutput) return alert("No results to export.");
+            
+            // Clean up the output
+            // a. Replace <br> with newlines
+            let text = currentRawOutput.replace(/<br\s*\/?>/gi, "\n");
+            // b. Remove LaTeX delimiters
+            text = text.replace(/\$\$/g, "");
+            // c. Strip remaining HTML tags
+            text = text.replace(/<[^>]*>?/gm, "");
+            
+            // d. Decode HTML entities (e.g. &lt; -> <) by using a DOM element
+            const txt = document.createElement("textarea");
+            txt.innerHTML = text;
+            text = txt.value;
+
+            navigator.clipboard.writeText(text).then(() => {
+                const original = btnText.textContent;
+                btnText.textContent = "Copied!";
+                setTimeout(() => btnText.textContent = original, 2000);
+            });
+        });
+    }
+
+    // 2. LaTeX Export (Copy Raw)
     btnLatex.addEventListener("click", () => {
         if (!currentRawOutput) return alert("No results to export.");
         navigator.clipboard.writeText(currentRawOutput).then(() => {
@@ -282,6 +311,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
+    // 3. PNG Export
     btnPng.addEventListener("click", () => {
         if (outputDiv.classList.contains("output-placeholder")) return;
         html2canvas(outputDiv, {
@@ -295,6 +325,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
+    // 4. PDF Export
     btnPdf.addEventListener("click", () => {
         if (outputDiv.classList.contains("output-placeholder")) return;
         const { jsPDF } = window.jspdf;
@@ -427,7 +458,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 else if (val === "cos(") { mathQuillInstance.cmd("cos"); mathQuillInstance.cmd("("); }
                 else if (val === "sqrt(") mathQuillInstance.cmd("sqrt");
                 else if (val === "log(") { mathQuillInstance.cmd("log"); mathQuillInstance.cmd("("); }
-                // FIX: Use typedText("/") for smart fraction wrapping instead of cmd("frac")
+                
+                // --- NEW LOGIC START ---
+                // "Smart Fraction" behavior: typing '/' triggers fraction creation
+                else if (val === "fraction") mathQuillInstance.typedText("/"); 
+                // --- NEW LOGIC END ---
+
                 else if (val === "/") mathQuillInstance.cmd("\\div");
                 else if (val === "^") mathQuillInstance.cmd("^");
                 else if (val === "π") mathQuillInstance.cmd("pi");
@@ -455,6 +491,11 @@ document.addEventListener("DOMContentLoaded", () => {
             else if (id === "btn-left") editor.execCommand("goCharLeft");
             else if (id === "btn-right") editor.execCommand("goCharRight");
             else if (id === "btn-newline") editor.execCommand("newlineAndIndent");
+            
+            // --- NEW LOGIC START ---
+            else if (val === "fraction") doc.replaceRange("/", cursor);
+            // --- NEW LOGIC END ---
+            
             else if (val) doc.replaceRange(val, cursor);
         }
     }
